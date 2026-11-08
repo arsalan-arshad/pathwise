@@ -41,28 +41,29 @@ interface HfRow {
   context: { title: string[]; sentences: string[][] };
 }
 
-/** Downloads the dev set (7,405 questions, ~75 pages) on first use and caches it as one JSON file. */
+/**
+ * Downloads the dev set (7,405 questions, 75 pages of 100) on first use. Each page is saved as it arrives,
+ * so an interrupted download (e.g. a Hugging Face rate limit) resumes where it stopped on the next run.
+ */
 export async function loadHotpot(): Promise<HotpotExample[]> {
   if (!existsSync(FILE)) {
-    await mkdir(PATHS.data, { recursive: true });
+    const pagesDir = new URL("pages/", PATHS.data);
+    await mkdir(pagesDir, { recursive: true });
     const examples: HotpotExample[] = [];
     let total = Infinity;
     for (let offset = 0; offset < total; offset += 100) {
-      const page = await fetchPage(offset);
-      total = page.num_rows_total;
-      for (const { row, truncated_cells } of page.rows) {
-        if (truncated_cells.length > 0) throw new Error(`Row ${row.id} came back truncated; try again later`);
-        examples.push({
-          _id: row.id,
-          question: row.question,
-          answer: row.answer,
-          type: row.type,
-          level: row.level,
-          supporting_facts: row.supporting_facts.title.map((t, i) => [t, row.supporting_facts.sent_id[i]]),
-          context: row.context.title.map((t, i) => [t, row.context.sentences[i]]),
-        });
+      const pageFile = new URL(`offset-${String(offset).padStart(5, "0")}.json`, pagesDir);
+      let page: { total: number; examples: HotpotExample[] };
+      if (existsSync(pageFile)) {
+        page = JSON.parse(await readFile(pageFile, "utf8"));
+      } else {
+        if (offset > 0) await sleep(PAGE_DELAY_MS); // be polite: the viewer API rate-limits bursts
+        page = await fetchPage(offset);
+        await writeFile(pageFile, JSON.stringify(page));
       }
-      process.stdout.write(`\rDownloading HotpotQA dev set from Hugging Face: ${examples.length}/${total}`);
+      total = page.total;
+      examples.push(...page.examples);
+      process.stdout.write(`\rHotpotQA dev set from Hugging Face: ${examples.length}/${total} questions`);
     }
     process.stdout.write("\n");
     await writeFile(FILE, JSON.stringify(examples));
@@ -70,20 +71,56 @@ export async function loadHotpot(): Promise<HotpotExample[]> {
   return JSON.parse(await readFile(FILE, "utf8")) as HotpotExample[];
 }
 
-async function fetchPage(offset: number) {
-  for (let attempt = 0; ; attempt++) {
+const PAGE_DELAY_MS = 1500;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function convert(row: HfRow): HotpotExample {
+  return {
+    _id: row.id,
+    question: row.question,
+    answer: row.answer,
+    type: row.type,
+    level: row.level,
+    supporting_facts: row.supporting_facts.title.map((t, i) => [t, row.supporting_facts.sent_id[i]]),
+    context: row.context.title.map((t, i) => [t, row.context.sentences[i]]),
+  };
+}
+
+/** One page of 100 rows. Waits out rate limits (honouring Retry-After) instead of giving up. */
+async function fetchPage(offset: number): Promise<{ total: number; examples: HotpotExample[] }> {
+  const url = `${DATASET_ROWS_URL}&offset=${offset}&length=100`;
+  for (let attempt = 1; ; attempt++) {
+    let res: Response | undefined;
     try {
-      const res = await fetch(`${DATASET_ROWS_URL}&offset=${offset}&length=100`, { signal: AbortSignal.timeout(60_000) });
-      if (res.ok) {
-        return (await res.json()) as { num_rows_total: number; rows: Array<{ row: HfRow; truncated_cells: string[] }> };
-      }
-      if (attempt >= 5 || (res.status < 500 && res.status !== 429)) {
-        throw new Error(`Dataset download failed at offset ${offset}: HTTP ${res.status}`);
-      }
+      res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     } catch (err) {
-      if (attempt >= 5) throw err;
+      if (attempt >= 8) throw err; // network trouble that does not go away
     }
-    await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+    if (res?.ok) {
+      const json = (await res.json()) as { num_rows_total: number; rows: Array<{ row: HfRow; truncated_cells: string[] }> };
+      for (const { row, truncated_cells } of json.rows) {
+        if (truncated_cells.length > 0) throw new Error(`Row ${row.id} came back truncated; run again later`);
+      }
+      return { total: json.num_rows_total, examples: json.rows.map(({ row }) => convert(row)) };
+    }
+    if (res && res.status !== 429 && res.status < 500) {
+      throw new Error(`Dataset download failed at offset ${offset}: HTTP ${res.status}`);
+    }
+    if (attempt >= 12) {
+      throw new Error(
+        `Dataset download still failing at offset ${offset} (HTTP ${res?.status ?? "network error"}). ` +
+          "Run the same command again later: pages downloaded so far are kept.",
+      );
+    }
+    const retryAfter = Number(res?.headers.get("retry-after"));
+    const waitS =
+      res?.status === 429
+        ? Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter
+          : Math.min(300, 30 * attempt)
+        : Math.min(60, 2 ** attempt);
+    process.stdout.write(`\n  ${res?.status === 429 ? "Rate limited" : "Temporary error"} at offset ${offset}; waiting ${waitS}s ...`);
+    await sleep(waitS * 1000);
   }
 }
 
