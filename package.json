@@ -1,0 +1,22 @@
+{
+  "name": "pathwise",
+  "version": "0.1.0",
+  "description": "A query planner for RAG and agent pipelines: meet your quality SLA at the lowest cost.",
+  "main": "dist/index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "build": "tsc",
+    "demo": "tsx examples/demo.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "type": "module",
+  "types": "dist/index.d.ts"
+}
