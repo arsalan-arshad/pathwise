@@ -1,5 +1,7 @@
 # Pathwise
 
+[![ci](https://github.com/arsalan-arshad/pathwise/actions/workflows/ci.yml/badge.svg)](https://github.com/arsalan-arshad/pathwise/actions/workflows/ci.yml) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **A query planner for RAG and agent pipelines.** Declare the quality you need; Pathwise picks the cheapest way to deliver it, per request.
 
 Databases have had query optimizers for 50 years. AI pipelines don't: teams hard-code one model, one `topK`, one reranker setting for every request, and pay frontier-model prices for "what are your opening hours?".
@@ -55,6 +57,11 @@ The workload is synthetic; real savings depend on how varied your traffic is.
 - [ ] Confidence bounds on predicted quality (guarantee the SLA, not just the average)
 - [ ] Hosted dashboard: dollars saved, SLA met, plan mix over time
 
+## Author
+
+Built by **Arsalan Arshad** at [arsalandev.studio](https://arsalandev.studio).
+If you want help with a Pathwise integration or a custom AI pipeline, [start a conversation](https://arsalandev.studio).
+
 ## License
 
-MIT
+MIT © [Arsalan Arshad](https://arsalandev.studio)
