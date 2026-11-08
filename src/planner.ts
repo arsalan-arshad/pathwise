@@ -36,6 +36,17 @@ export interface CalibrationOptions {
   auditEvery?: number;
   /** Highest violation rate at which skipped pricier plans are still credited. Default 0.05. */
   maxViolationRate?: number;
+  /**
+   * Times each calibration output is scored; the median (majority for pass/fail) is kept.
+   * Default 3 when scorerErrorRate > 0, else 1. Must be odd.
+   */
+  scoreVotes?: number;
+  /**
+   * A calibration verdict that passes stopQuality is re-scored up to this many votes in total before it
+   * can end a query's search. Stops the "winner's curse": with a noisy judge, trying cheap plans one by one
+   * otherwise ends on false passes. Default 7 when scorerErrorRate > 0, else scoreVotes. Must be odd.
+   */
+  confirmVotes?: number;
 }
 
 export interface PlannerOptions<I, O> {
@@ -52,6 +63,13 @@ export interface PlannerOptions<I, O> {
   feedbackRate?: number;
   /** Parallel pipeline runs during calibration. */
   concurrency?: number;
+  /**
+   * How often the scorer gives the wrong verdict (0..0.5), e.g. how often your LLM judge disagrees
+   * with human labels on a small labelled set. Quality estimates are corrected for it; without this,
+   * a judge that is wrong 10% of the time makes even perfect plans look only 90% correct. Stored
+   * observation qualities are bias-corrected, so they can fall slightly outside 0..1. Default 0.
+   */
+  scorerErrorRate?: number;
   calibration?: CalibrationOptions;
 }
 
@@ -61,6 +79,8 @@ export interface PlannerStats {
   fallbacks: number;
   calibrationCostUsd: number;
   calibrationRuns: number;
+  /** Scorer (e.g. LLM judge) calls made, calibration and production feedback together. */
+  scorerCalls: number;
   planUsage: Record<string, number>;
 }
 
@@ -83,12 +103,21 @@ export class Planner<I, O> {
   /** Credit plans skipped above a query's winner with the winner's score (see QueryRecord.winner). */
   private assumeMonotone = false;
   private violation = { rate: 0, measured: 0 };
+  /** Predicted quality needed to choose a plan; raised above minQuality by sla.confidence. */
+  private threshold: number;
+  private certification = { quality: NaN, certified: false };
+  /** sla.confidence set, SLA not certifiable, onUncertified "safe": every request gets the safe plan. */
+  private safeMode = false;
+  private safeKey: string | undefined;
+  /** Effective scorer error rate of a calibration observation after majority voting. */
+  private calibErrorRate = 0;
   private readonly stats: PlannerStats = {
     runs: 0,
     totalCostUsd: 0,
     fallbacks: 0,
     calibrationCostUsd: 0,
     calibrationRuns: 0,
+    scorerCalls: 0,
     planUsage: {},
   };
 
@@ -97,7 +126,10 @@ export class Planner<I, O> {
     this.plans = enumeratePlans(rest.space);
     for (const p of this.plans) this.planByKey.set(planKey(p), p);
     this.featurize = featurize ?? (hashedTextFeaturizer() as Featurizer<I>);
-    this.opts = { neighbours: 7, priorWeight: 0.5, feedbackRate: 0.1, concurrency: 8, ...rest };
+    this.opts = { neighbours: 7, priorWeight: 0.5, feedbackRate: 0.1, concurrency: 8, scorerErrorRate: 0, ...rest };
+    if (!(this.opts.scorerErrorRate >= 0 && this.opts.scorerErrorRate < 0.5)) {
+      throw new Error("scorerErrorRate must be in [0, 0.5)");
+    }
     this.calib = {
       strategy: "adaptive",
       seedQueries: 2,
@@ -107,8 +139,15 @@ export class Planner<I, O> {
       shortcutNeighbours: 3,
       auditEvery: 10,
       maxViolationRate: 0.05,
+      scoreVotes: this.opts.scorerErrorRate > 0 ? 3 : 1,
+      confirmVotes: this.opts.scorerErrorRate > 0 ? 7 : (calibration?.scoreVotes ?? 1),
       ...calibration,
     };
+    for (const [name, v] of [["scoreVotes", this.calib.scoreVotes], ["confirmVotes", this.calib.confirmVotes]] as const) {
+      if (!(Number.isInteger(v) && v % 2 === 1)) throw new Error(`calibration.${name} must be an odd integer`);
+    }
+    this.calibErrorRate = majorityErrorRate(this.opts.scorerErrorRate, this.calib.scoreVotes);
+    this.threshold = rest.sla.minQuality;
   }
 
   /**
@@ -157,6 +196,7 @@ export class Planner<I, O> {
     }
 
     this.refresh();
+    this.tuneThreshold();
     return {
       strategy: this.calib.strategy,
       samples: samples.length,
@@ -169,6 +209,9 @@ export class Planner<I, O> {
       prunedPlans: [...this.dominated].sort(),
       monotonicityViolationRate: this.violation.rate,
       assumeMonotone: this.assumeMonotone,
+      qualityThreshold: this.threshold,
+      certifiedQuality: this.certification.quality,
+      slaCertified: this.certification.certified,
     };
   }
 
@@ -177,14 +220,19 @@ export class Planner<I, O> {
     if (this.records.length === 0) {
       throw new Error("Planner has no data yet: call calibrate() first");
     }
-    const f = this.featurize(input);
+    return this.estimateFeatures(this.featurize(input));
+  }
+
+  /** Estimates from a feature vector, optionally pretending one record does not exist (leave-one-out). */
+  private estimateFeatures(f: number[], exclude?: QueryRecord): PlanEstimate[] {
     const ranked = this.records
+      .filter((r) => r !== exclude)
       .map((r) => ({ r, sim: Math.max(0, cosine(f, r.features)) }))
       .sort((a, b) => b.sim - a.sim);
 
     return this.plans.map((plan) => {
       const key = planKey(plan);
-      const prior = this.globalMean(key);
+      const prior = this.globalMean(key, exclude);
       // k nearest queries *with evidence for this plan*: measured, or skipped above that query's
       // winner (credited only if monotonicity checks out). With a full sweep this is plain k-NN.
       let w = 0, q = 0, c = 0, l = 0, used = 0;
@@ -216,7 +264,7 @@ export class Planner<I, O> {
       return {
         plan,
         planKey: key,
-        quality: (q + a * prior.quality) / (w + a),
+        quality: clamp01((q + a * prior.quality) / (w + a)),
         costUsd: (c + a * prior.costUsd) / (w + a),
         latencyMs: (l + a * prior.latencyMs) / (w + a),
         support: w,
@@ -224,10 +272,22 @@ export class Planner<I, O> {
     });
   }
 
-  /** Pick the cheapest plan predicted to meet the SLA. Dominated plans are never chosen. */
+  /**
+   * Pick the cheapest plan predicted to meet the SLA. Dominated plans are never chosen.
+   * With sla.confidence, "meets" uses the calibrated threshold instead of minQuality.
+   */
   decide(input: I): Decision {
-    const { minQuality, maxLatencyMs, maxCostUsd } = this.opts.sla;
-    const all = this.estimate(input);
+    const estimates = this.estimate(input);
+    if (this.safeMode) {
+      // SLA could not be certified: run the plan with the best measured quality across all data.
+      const safe = estimates.find((e) => e.planKey === this.safePlanKey());
+      if (safe) return { plan: safe.plan, estimate: safe, fallback: true };
+    }
+    return this.choose(estimates, this.threshold);
+  }
+
+  private choose(all: PlanEstimate[], minQuality: number): Decision {
+    const { maxLatencyMs, maxCostUsd } = this.opts.sla;
     const active = all.filter((e) => !this.dominated.has(e.planKey));
     const estimates = active.length > 0 ? active : all;
     const feasible = estimates.filter(
@@ -240,8 +300,11 @@ export class Planner<I, O> {
       const best = feasible.reduce((a, b) => (b.costUsd < a.costUsd ? b : a));
       return { plan: best.plan, estimate: best, fallback: false };
     }
-    // Nothing meets the SLA: protect quality, pick the best predicted plan.
-    const best = estimates.reduce((a, b) => (b.quality > a.quality ? b : a));
+    // Nothing meets the SLA: protect quality, pick the best predicted plan. Estimates are capped at 1,
+    // so on a tie prefer the pricier plan (usually the more capable one), not the first in enumeration order.
+    const best = estimates.reduce((a, b) =>
+      b.quality > a.quality || (b.quality === a.quality && b.costUsd > a.costUsd) ? b : a,
+    );
     return { plan: best.plan, estimate: best, fallback: true };
   }
 
@@ -273,6 +336,7 @@ export class Planner<I, O> {
   importState(records: QueryRecord[]): void {
     this.records.push(...structuredClone(records));
     this.refresh();
+    this.tuneThreshold();
   }
 
   // ---------------------------------------------------------------- calibration internals
@@ -358,7 +422,10 @@ export class Planner<I, O> {
   }
 
   private async calibrationRun(input: I, plan: Plan, record: QueryRecord): Promise<number> {
-    const { observation } = await this.execute(input, plan, true);
+    const { observation } = await this.execute(input, plan, true, this.calib.scoreVotes, {
+      stopQuality: this.calib.stopQuality,
+      confirmVotes: this.calib.confirmVotes,
+    });
     record.observations.push(observation);
     this.stats.calibrationCostUsd += observation.costUsd;
     this.stats.calibrationRuns++;
@@ -478,16 +545,130 @@ export class Planner<I, O> {
         }
       }
     }
-    return { rate: after === 0 ? 0 : fails / after, measured: after };
+    // Some "violations" are just scorer mistakes: correct the observed rate for the calibration error rate.
+    const raw = after === 0 ? 0 : fails / after;
+    return { rate: clamp01(unbias(raw, this.calibErrorRate)), measured: after };
+  }
+
+  // ---------------------------------------------------------------- SLA guarantee
+
+  /**
+   * With sla.confidence: replay every calibration query leave-one-out (decide as if it were unseen,
+   * then look up how the chosen plan actually scored on it) for a range of thresholds, and keep the
+   * lowest (cheapest) threshold whose replayed average quality clears minQuality at that confidence
+   * (Wilson lower bound). If none does, keep the threshold with the best bound and report uncertified.
+   */
+  private tuneThreshold() {
+    const { minQuality, confidence } = this.opts.sla;
+    this.threshold = minQuality;
+    this.certification = { quality: NaN, certified: false };
+    this.safeMode = false;
+    this.safeKey = undefined;
+    if (confidence === undefined) return;
+    if (!(confidence > 0 && confidence < 1)) throw new Error("sla.confidence must be between 0 and 1");
+
+    // Calibration records only: they know every plan's outcome (measured or implied by the search).
+    const replay = this.records.filter((r) => r.winner !== undefined || r.observations.length > 1);
+    if (replay.length === 0) return;
+    const loo = replay.map((r) => ({ r, estimates: this.estimateFeatures(r.features, r) }));
+
+    const candidates = new Set<number>([minQuality]);
+    for (let t = Math.ceil(minQuality * 100) / 100; t <= 1.0001; t += 0.01) candidates.add(Math.min(1, t));
+    const z = normalQuantile(confidence);
+    let best = { threshold: minQuality, lower: -Infinity };
+    for (const t of [...candidates].sort((a, b) => a - b)) {
+      let sum = 0;
+      for (const { r, estimates } of loo) sum += this.realized(r, this.choose(estimates, t).estimate.planKey);
+      // Replayed scores are bias-corrected scorer verdicts. Bound the mean on the scorer's own scale
+      // (where Wilson applies), then map the bound back. The mapping is monotone, so confidence carries over.
+      const e = this.calibErrorRate;
+      const observed = clamp01(clamp01(sum / loo.length) * (1 - 2 * e) + e);
+      const lower = unbias(wilsonLower(observed, loo.length, z), e);
+      if (lower > best.lower) best = { threshold: t, lower };
+      if (lower >= minQuality) {
+        this.threshold = t;
+        this.certification = { quality: lower, certified: true };
+        return;
+      }
+    }
+    // Not certifiable with this data. "safe": every request gets the plan with the best measured
+    // quality overall (see safePlanKey). "best-effort": the threshold that came closest.
+    this.safeMode = (this.opts.sla.onUncertified ?? "safe") === "safe";
+    this.threshold = best.threshold;
+    this.certification = { quality: best.lower, certified: false };
+  }
+
+  /**
+   * Plan for "safe" mode: the non-dominated plan with the best quality replayed over every calibration
+   * query, ties to the pricier plan. Raw per-plan averages would be biased (cheap plans are tested on easy
+   * and hard queries, pricier ones only where cheaper plans failed), so plans skipped above a query's
+   * winner are credited with the winner's score here, even if the monotonicity check failed.
+   */
+  private safePlanKey(): string | undefined {
+    if (this.safeKey !== undefined) return this.safeKey;
+    const replay = this.records.filter((r) => r.winner !== undefined || r.observations.length > 1);
+    let best: { key: string; q: number; c: number } | undefined;
+    for (const key of this.activeByCost()) {
+      const c = this.profiles.get(key)?.costUsd ?? Infinity;
+      if (!Number.isFinite(c)) continue;
+      let q = 0;
+      for (const r of replay) q += this.realized(r, key, true);
+      if (!best || q > best.q || (q === best.q && c > best.c)) best = { key, q, c };
+    }
+    this.safeKey = best?.key;
+    return this.safeKey;
+  }
+
+  /** How a plan scored on a calibration query: measured, implied by cheapest-first search, or 0 if unknown. */
+  private realized(r: QueryRecord, key: string, forceCredit = false): number {
+    let sum = 0, n = 0, winnerQuality = NaN;
+    for (const o of r.observations) {
+      if (Number.isNaN(o.quality)) continue;
+      if (o.planKey === key) {
+        sum += o.quality;
+        n++;
+      }
+      if (o.planKey === r.winner) winnerQuality = o.quality;
+    }
+    if (n > 0) return sum / n;
+    // Unmeasured. Pricier than the winner: credited with the winner's score if monotonicity holds.
+    // Cheaper than the winner (or no winner): the search found cheaper plans failing, so assume it fails.
+    const pk = this.profiles.get(key)?.costUsd ?? Infinity;
+    const pw = r.winner === undefined ? undefined : this.profiles.get(r.winner)?.costUsd;
+    if (pw !== undefined && pk > pw && (this.assumeMonotone || forceCredit) && !Number.isNaN(winnerQuality)) {
+      return winnerQuality;
+    }
+    return 0;
   }
 
   // ---------------------------------------------------------------- shared helpers
 
-  private async execute(input: I, plan: Plan, score: boolean) {
+  private async execute(
+    input: I,
+    plan: Plan,
+    score: boolean,
+    votes = 1,
+    confirm?: { stopQuality: number; confirmVotes: number },
+  ) {
     const start = performance.now();
     const result = await this.opts.pipeline(input, plan);
     const latencyMs = result.latencyMs ?? performance.now() - start;
-    const quality = score ? await this.opts.scorer(input, result.output) : NaN;
+    let quality = NaN;
+    if (score) {
+      const scores: number[] = [];
+      const median = () => [...scores].sort((a, b) => a - b)[(scores.length - 1) / 2];
+      const vote = async (n: number) => {
+        for (let i = 0; i < n; i++) scores.push(await this.opts.scorer(input, result.output));
+        this.stats.scorerCalls += n;
+      };
+      await vote(votes);
+      // A passing verdict can end a calibration search, so confirm it with extra votes first.
+      if (confirm && confirm.confirmVotes > votes && median() >= confirm.stopQuality) {
+        await vote(confirm.confirmVotes - votes);
+      }
+      // Median verdict, then correct for the scorer's (voted) error rate so the stored value is unbiased.
+      quality = unbias(median(), majorityErrorRate(this.opts.scorerErrorRate, scores.length));
+    }
     const observation: Observation = {
       planKey: planKey(plan),
       quality,
@@ -497,9 +678,10 @@ export class Planner<I, O> {
     return { result: { ...result, latencyMs }, observation };
   }
 
-  private globalMean(key: string) {
+  private globalMean(key: string, exclude?: QueryRecord) {
     let n = 0, quality = 0, costUsd = 0, latencyMs = 0;
     for (const r of this.records) {
+      if (r === exclude) continue;
       for (const o of r.observations) {
         if (o.planKey !== key || Number.isNaN(o.quality)) continue;
         n++;
@@ -564,4 +746,56 @@ async function runWithConcurrency(jobs: Array<() => Promise<void>>, limit: numbe
     }
   });
   await Promise.all(workers);
+}
+
+/** Wilson score lower bound for a mean in [0, 1] observed over n trials (conservative for graded scores). */
+function wilsonLower(mean: number, n: number, z: number): number {
+  if (n === 0) return 0;
+  const z2 = z * z;
+  const centre = mean + z2 / (2 * n);
+  const margin = z * Math.sqrt((mean * (1 - mean)) / n + z2 / (4 * n * n));
+  return (centre - margin) / (1 + z2 / n);
+}
+
+/** One-sided standard normal quantile (Acklam's rational approximation, |error| < 1.2e-9). */
+function normalQuantile(p: number): number {
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  const lo = 0.02425;
+  if (p < lo) {
+    const q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  if (p > 1 - lo) {
+    const q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  const q = p - 0.5;
+  const r = q * q;
+  return ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+
+function clamp01(x: number): number {
+  return Math.min(1, Math.max(0, x));
+}
+
+/** Observed score -> unbiased true-quality estimate, for a scorer that flips verdicts with probability e. */
+function unbias(observed: number, e: number): number {
+  return e === 0 ? observed : (observed - e) / (1 - 2 * e);
+}
+
+/** Probability that the majority of `votes` independent verdicts is wrong, each wrong with probability e. */
+function majorityErrorRate(e: number, votes: number): number {
+  if (e === 0 || votes === 1) return e;
+  let p = 0;
+  for (let k = Math.ceil(votes / 2); k <= votes; k++) p += binom(votes, k) * e ** k * (1 - e) ** (votes - k);
+  return p;
+}
+
+function binom(n: number, k: number): number {
+  let r = 1;
+  for (let i = 1; i <= k; i++) r = (r * (n - k + i)) / i;
+  return r;
 }
