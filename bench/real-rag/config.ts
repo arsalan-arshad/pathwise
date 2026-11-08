@@ -58,19 +58,31 @@ export function priceFor(tier: Tier, at: Date = new Date()): Price {
 /** Free tier: requests per minute to stay under (check yours at https://aistudio.google.com/rate-limit). */
 export const DEFAULT_RPM = MODEL_SET === "free" ? 10 : 60;
 
-/** The planner's knob space: 3 models x 3 retrieval depths x 2 thinking levels = 18 plans. */
+/**
+ * Model tiers in the knob space (PATHWISE_BENCH_TIERS, comma-separated). The free set defaults to
+ * small + medium: free-tier Flash models ("large") allowed only ~20-30 calls a day on Nov 8, 2026, while the
+ * Flash-Lite models handled hundreds. The paid set uses all three.
+ */
+export const TIERS: Tier[] = (process.env.PATHWISE_BENCH_TIERS ?? (MODEL_SET === "free" ? "small,medium" : "small,medium,large"))
+  .split(",")
+  .map((t) => t.trim())
+  .filter((t): t is Tier => t === "small" || t === "medium" || t === "large");
+if (TIERS.length === 0) throw new Error("PATHWISE_BENCH_TIERS must list small, medium and/or large");
+
+/** The planner's knob space: models x 3 retrieval depths x 2 thinking levels (12 plans with 2 tiers). */
 export const SPACE = {
-  model: ["small", "medium", "large"],
+  model: TIERS,
   topK: [2, 5, 10],
   thinking: ["low", "high"],
 };
 
-/** Plans most teams would ship, used as baselines. */
+const top = TIERS[TIERS.length - 1];
+/** Plans most teams would ship, used as baselines: everything maxed, a sensible default, and the cheapest. */
 export const BASELINES = {
-  max: { model: "large", topK: 10, thinking: "high" },
-  typical: { model: "large", topK: 5, thinking: "low" },
-  cheap: { model: "small", topK: 2, thinking: "low" },
-} as const;
+  max: { model: top, topK: 10, thinking: "high" },
+  typical: { model: top, topK: 5, thinking: "low" },
+  cheap: { model: TIERS[0], topK: 2, thinking: "low" },
+};
 
 /**
  * Hard cap on API spend across all runs (the ledger persists between runs). On the free tier nothing is
