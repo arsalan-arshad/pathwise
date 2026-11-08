@@ -12,7 +12,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createPlanner, hashedTextFeaturizer, planKey, type Plan } from "../../src/index.js";
-import { BASELINES, BUDGET_USD, MODELS, PATHS, SPACE } from "./config.js";
+import { BASELINES, BUDGET_USD, MODELS, PATHS, SPACE, TIERS } from "./config.js";
 import { loadHotpot, sample, type Question } from "./dataset.js";
 import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, stopAll, setRpm, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer, type Answer } from "./pipeline.js";
@@ -134,7 +134,7 @@ const lines = [
   `# Real-RAG benchmark: ${new Date().toISOString().slice(0, 10)}`,
   "",
   `Real Gemini API calls on HotpotQA dev (distractor), ${calibration.length} calibration + ${test.length} test questions.`,
-  `Models: ${Object.values(MODELS).join(", ")}. SLA: mean F1 >= ${SLA}.${spend.mock ? " **MOCK MODE: fake model, not real results.**" : ""}`,
+  `Models: ${TIERS.map((t) => MODELS[t]).join(", ")}. SLA: mean F1 >= ${SLA}.${spend.mock ? " **MOCK MODE: fake model, not real results.**" : ""}`,
   ...(spend.modelSet === "free" && !spend.mock
     ? ["Run on the Gemini free tier (billed $0). All costs below are what the same calls cost at paid-tier list prices."]
     : []),
@@ -163,7 +163,7 @@ const base = new URL(`${spend.mock ? "mock-" : ""}run-${stamp}`, PATHS.results);
 await writeFile(new URL(`${base.pathname.split("/").pop()}.md`, PATHS.results), lines.join("\n") + "\n");
 await writeFile(
   new URL(`${base.pathname.split("/").pop()}.json`, PATHS.results),
-  JSON.stringify({ sla: SLA, confidence: CONFIDENCE, calibration: calibration.length, test: test.length, models: MODELS, results, spend }, null, 2),
+  JSON.stringify({ sla: SLA, confidence: CONFIDENCE, calibration: calibration.length, test: test.length, models: Object.fromEntries(TIERS.map((t) => [t, MODELS[t]])), results, spend }, null, 2),
 );
 console.log("\n" + lines.join("\n"));
 console.log(`\nSaved to bench/real-rag/results/${base.pathname.split("/").pop()}.md`);
