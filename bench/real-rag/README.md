@@ -4,40 +4,45 @@ Tests Pathwise on **real Gemini API calls** and a **real eval set** (HotpotQA de
 Everything else in this repo is a simulation; this is where the numbers become real.
 
 - **Pipeline:** BM25 over each question's 10 paragraphs (2 contain the answer) -> Gemini answers from the top-k.
-- **Knobs (18 plans):** model (`gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-4-argon`) x top-k (2, 5, 10) x thinking (low, high).
+- **Knobs (18 plans):** model x top-k (2, 5, 10) x thinking (low, high).
+- **Models, free set (default, costs $0):** `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.8-flash`,
+  all on the Gemini API free tier. **Paid set** (`PATHWISE_BENCH_MODELS=paid`, needs billing):
+  `gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-4-argon`.
 - **Quality:** token F1 against the gold answer (official HotpotQA rules). Deterministic, so no judge noise.
-- **Cost:** real token usage x official prices (`config.ts`, checked Nov 8, 2026). Thinking tokens billed as output.
-- **Safety:** hard budget cap (default $25, `PATHWISE_BENCH_BUDGET`), persistent spend ledger, response cache
-  (re-runs are free; every strategy is still charged the cost its calls originally had).
+- **Cost:** real token usage x official paid-tier list prices (`config.ts`, checked Nov 8, 2026), thinking billed as
+  output. On the free tier you pay nothing; the report shows what the same calls cost at list price, which is
+  what the savings comparison needs.
+- **Free-tier friendly:** requests-per-minute throttle (default 10, `--rpm`), automatic slow-down on per-minute
+  limits, and a clean stop when the daily quota runs out. Run the same command the next day: every finished call
+  is cached, so it continues where it stopped.
+- **Safety:** response cache, persistent ledger, and a budget cap (default $25, `PATHWISE_BENCH_BUDGET`) that only
+  matters on the paid set.
 
-Prices change: `gemini-4-argon` doubles on Dec 1, 2026 and `gemini-3.8-flash` on Jan 1, 2027. `config.ts` applies them by date.
+The dataset (7,405 questions) is fetched from the Hugging Face dataset viewer on first run (about 75 requests;
+the original host, curtis.ml.cmu.edu, no longer resolves). It stays local (`data/`, CC BY-SA 4.0, gitignored).
 
-## Before you start
-
-- **Billing must be on for your API key.** On the free tier `gemini-4-argon` has a quota of 0, and the other
-  models have low rate limits. In Google AI Studio, open *Get API key*, pick the key's project and set up billing.
-  The harness stops immediately with a clear message if a model has no quota.
-- The dataset (7,405 questions) is fetched from the Hugging Face dataset viewer on first run, about 75 requests.
-  The original host, curtis.ml.cmu.edu, no longer resolves.
-
-## Run it (about 30-45 minutes, under $25)
+## Run it for free
 
 ```bash
-export GEMINI_API_KEY=...            # your key, from Google AI Studio; never committed or logged
+export GEMINI_API_KEY=...            # free key from Google AI Studio; never committed or logged
 
 npm run bench:rag:smoke              # 3 tiny calls: checks the key, model ids and usage fields
-npm run bench:rag:pilot              # 18 plans x 40 questions: per-plan quality and cost, suggests --sla
-npm run bench:rag -- --sla 0.XX      # main run: 200 calibration + 500 test questions
+npm run bench:rag:pilot              # 18 plans x 20 questions (360 calls, ~40 min at 10/min): suggests --sla
+npm run bench:rag -- --sla 0.XX      # main run: 100 calibration + 200 test questions
 ```
 
-Options: `--calibration N`, `--test N`, `--confidence 0.9`, `--concurrency 6`.
-Offline dry run with a fake model (no key, no cost): prefix any command with `PATHWISE_BENCH_MOCK=1`.
+Check your free-tier limits at https://aistudio.google.com/rate-limit and pass `--rpm` to match.
+Options: `--calibration N`, `--test N`, `--confidence 0.9`, `--concurrency 2`, `--rpm 10`.
+Offline dry run with a fake model (no key, no calls): prefix any command with `PATHWISE_BENCH_MOCK=1`.
+Results land in `results/` as Markdown and JSON.
 
-Results land in `results/` as Markdown and JSON. The downloaded data (`data/`, CC BY-SA 4.0) and the
-response cache (`cache/`) stay local and are gitignored.
+Free-tier note: Google's terms for unpaid API use may allow it to use prompts to improve its products. This
+benchmark only sends public HotpotQA text; do not send private data on a free key.
 
 ## Known limits
 
 - HotpotQA is public and old: models may have seen it in training, which flatters small models.
+- The free set's largest model is `gemini-3.8-flash`, not a frontier model, so the price gap between plans is
+  smaller than in a real stack that tops out at a frontier model. Savings measured here are likely an underestimate.
 - One dataset, one provider, one run: treat the result as a first real data point, not a general claim.
 - Gemini 4 / 3.6+ ignore temperature, so answers vary between runs; the cache freezes one sample.

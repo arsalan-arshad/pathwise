@@ -2,13 +2,20 @@
  * Real-RAG benchmark configuration: models, prices, knobs, budget.
  * Prices: official Gemini API paid tier, checked Nov 8, 2026 (https://aistudio.google.com/docs/pricing),
  * USD per 1M tokens, thinking tokens billed at the output price.
+ *
+ * Two model sets (PATHWISE_BENCH_MODELS):
+ * - "free" (default): models available on the Gemini free tier, so the run costs nothing. Costs are still
+ *   reported at paid-tier list prices, which is what the savings comparison needs.
+ * - "paid": includes gemini-4-argon (no free tier; needs billing on the key).
  */
 
-export const MODELS = {
-  small: "gemini-3.5-flash-lite",
-  medium: "gemini-3.8-flash",
-  large: "gemini-4-argon",
+const MODEL_SETS = {
+  free: { small: "gemini-3.1-flash-lite", medium: "gemini-3.5-flash-lite", large: "gemini-3.8-flash" },
+  paid: { small: "gemini-3.5-flash-lite", medium: "gemini-3.8-flash", large: "gemini-4-argon" },
 } as const;
+
+export const MODEL_SET: keyof typeof MODEL_SETS = process.env.PATHWISE_BENCH_MODELS === "paid" ? "paid" : "free";
+export const MODELS: Record<"small" | "medium" | "large", string> = MODEL_SETS[MODEL_SET];
 export type Tier = keyof typeof MODELS;
 
 interface Price {
@@ -16,21 +23,32 @@ interface Price {
   outputPerM: number;
 }
 
-/** Price for a model on a given date (two of the three have announced increases). */
-export function priceFor(tier: Tier, at: Date = new Date()): Price {
-  switch (tier) {
-    case "small":
+/** Paid-tier list price of a model on a given date (some have announced increases). */
+export function priceOf(model: string, at: Date = new Date()): Price {
+  switch (model) {
+    case "gemini-3.1-flash-lite":
+      return { inputPerM: 0.25, outputPerM: 1.5 };
+    case "gemini-3.5-flash-lite":
       return { inputPerM: 0.3, outputPerM: 2.5 };
-    case "medium":
+    case "gemini-3.8-flash":
       return at < new Date("2027-01-01T00:00:00Z")
         ? { inputPerM: 0.75, outputPerM: 3.75 }
         : { inputPerM: 1.5, outputPerM: 7.5 };
-    case "large":
+    case "gemini-4-argon":
       return at < new Date("2026-12-01T00:00:00Z")
         ? { inputPerM: 2.0, outputPerM: 10.0 }
         : { inputPerM: 4.0, outputPerM: 20.0 };
+    default:
+      throw new Error(`No price for ${model}`);
   }
 }
+
+export function priceFor(tier: Tier, at: Date = new Date()): Price {
+  return priceOf(MODELS[tier], at);
+}
+
+/** Free tier: requests per minute to stay under (check yours at https://aistudio.google.com/rate-limit). */
+export const DEFAULT_RPM = MODEL_SET === "free" ? 10 : 60;
 
 /** The planner's knob space: 3 models x 3 retrieval depths x 2 thinking levels = 18 plans. */
 export const SPACE = {
@@ -46,7 +64,10 @@ export const BASELINES = {
   cheap: { model: "small", topK: 2, thinking: "low" },
 } as const;
 
-/** Hard cap on real API spend across all runs (the ledger persists between runs). */
+/**
+ * Hard cap on API spend across all runs (the ledger persists between runs). On the free tier nothing is
+ * billed; the ledger then tracks the list-price equivalent and the cap is just a safety net.
+ */
 export const BUDGET_USD = Number(process.env.PATHWISE_BENCH_BUDGET ?? 25);
 
 /** Upper bound for one call, used to refuse a call that could cross the budget. */
