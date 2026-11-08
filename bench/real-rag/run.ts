@@ -1,7 +1,7 @@
 /**
  * Step 3: the main real-RAG benchmark.
  *
- *   npm run bench:rag -- --sla 0.7 [--calibration 200] [--test 500] [--confidence 0.9] [--concurrency 6]
+ *   npm run bench:rag -- --sla 0.7 [--calibration 100] [--test 200] [--confidence 0.9] [--concurrency 2] [--rpm 10]
  *
  * Calibrates Pathwise on the calibration questions, then answers the test questions with:
  *   - Pathwise, average-based decisions (v0.1 behaviour)
@@ -14,7 +14,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createPlanner, hashedTextFeaturizer, planKey, type Plan } from "../../src/index.js";
 import { BASELINES, BUDGET_USD, MODELS, PATHS, SPACE } from "./config.js";
 import { loadHotpot, sample, type Question } from "./dataset.js";
-import { BudgetExceeded, QuotaError, spendSoFar } from "./gemini.js";
+import { BudgetExceeded, DailyQuotaError, QuotaError, setRpm, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer, type Answer } from "./pipeline.js";
 
 const args = process.argv.slice(2);
@@ -27,10 +27,11 @@ if (SLA === undefined || Number.isNaN(SLA)) {
   console.error("Pass --sla (run the pilot first; it suggests one).");
   process.exit(1);
 }
-const CALIBRATION = arg("calibration", 200)!;
-const TEST = arg("test", 500)!;
+const CALIBRATION = arg("calibration", 100)!;
+const TEST = arg("test", 200)!;
 const CONFIDENCE = arg("confidence", 0.9)!;
-const CONCURRENCY = arg("concurrency", 6)!;
+const CONCURRENCY = arg("concurrency", 2)!;
+setRpm(arg("rpm", 0)!);
 
 const all = await loadHotpot();
 const { calibration, test } = sample(all, CALIBRATION, TEST);
@@ -115,12 +116,14 @@ try {
   results.push(await runFixed("Typical default", { ...BASELINES.typical }));
   results.push(await runFixed("Always max", { ...BASELINES.max }));
 } catch (err) {
-  if (!(err instanceof BudgetExceeded || err instanceof QuotaError)) throw err;
+  if (!(err instanceof BudgetExceeded || err instanceof QuotaError || err instanceof DailyQuotaError)) throw err;
   stopped = err.message;
+  if (err instanceof DailyQuotaError) stopped += " Results below are partial.";
   console.error(`\n${stopped}`);
 }
 
 // ---------------------------------------------------------------- report
+
 const spend = spendSoFar();
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const max = results.find((r) => r.name === "Always max");
@@ -131,6 +134,9 @@ const lines = [
   "",
   `Real Gemini API calls on HotpotQA dev (distractor), ${calibration.length} calibration + ${test.length} test questions.`,
   `Models: ${Object.values(MODELS).join(", ")}. SLA: mean F1 >= ${SLA}.${spend.mock ? " **MOCK MODE: fake model, not real results.**" : ""}`,
+  ...(spend.modelSet === "free" && !spend.mock
+    ? ["Run on the Gemini free tier (billed $0). All costs below are what the same calls cost at paid-tier list prices."]
+    : []),
   "",
   "| Strategy | Mean F1 | SLA met | Cost (test) | $/query | p50 latency | p95 latency | Calibration |",
   "|---|---|---|---|---|---|---|---|",
@@ -146,7 +152,9 @@ const lines = [
         .filter((r) => r.name.startsWith("Pathwise"))
         .map((r) => `- ${r.name}: ${pct(1 - r.costUsd / max.costUsd)} cheaper than always-max, F1 ${r.quality.toFixed(3)} vs ${max.quality.toFixed(3)}.`)
     : []),
-  `- Real API spend so far (all runs, cache included once): ${usd(spend.spentUsd)} of ${usd(BUDGET_USD)}.`,
+  spend.modelSet === "free"
+    ? `- List-price equivalent of all API calls so far (each counted once): ${usd(spend.spentUsd)}; billed $0 (free tier).`
+    : `- Real API spend so far (all runs, cache included once): ${usd(spend.spentUsd)} of ${usd(BUDGET_USD)}.`,
   ...(stopped ? [`- **Stopped early:** ${stopped}`] : []),
 ];
 await mkdir(PATHS.results, { recursive: true });
