@@ -166,8 +166,10 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
       continue;
     }
     const latencyMs = performance.now() - start;
+    let errorNote = "";
     if (res.status === 429) {
       const text = await res.clone().text();
+      errorNote = `: ${quotaMessage(text).slice(0, 160)}`;
       // A hard zero quota (e.g. a model unavailable on the free tier) will never succeed: stop now.
       if (/limit:\s*0\b/i.test(text)) {
         throw new QuotaError(
@@ -179,14 +181,15 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
       if (/per\s*day|perday|daily/i.test(text)) {
         throw new DailyQuotaError(
           `Daily free-tier quota for ${model} is used up. Run the same command again tomorrow: ` +
-            "everything finished so far is cached and will not be re-requested.",
+            "everything finished so far is cached and will not be re-requested.\n" +
+            `  Google said: ${quotaMessage(text)}`,
         );
       }
       // Per-minute limit: slow down for the rest of this run.
       if (rpm > 2) rpm = Math.max(2, Math.floor(rpm * 0.7));
     }
     if (res.status === 429 || res.status >= 500) {
-      await retry(attempt, `HTTP ${res.status}`);
+      await retry(attempt, `HTTP ${res.status}${errorNote}`);
       continue;
     }
     const json = (await res.json()) as InteractionResponse;
@@ -269,3 +272,14 @@ function mockCall(tier: Tier, thinking: string, prompt: string, hint?: MockHint)
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The human-readable part of a Gemini error body (falls back to the raw text). */
+function quotaMessage(text: string): string {
+  try {
+    const m = (JSON.parse(text) as { error?: { message?: string } }).error?.message;
+    if (m) return m.slice(0, 400);
+  } catch {
+    /* not JSON */
+  }
+  return text.slice(0, 400);
+}

@@ -4,10 +4,12 @@ Tests Pathwise on **real Gemini API calls** and a **real eval set** (HotpotQA de
 Everything else in this repo is a simulation; this is where the numbers become real.
 
 - **Pipeline:** BM25 over each question's 10 paragraphs (2 contain the answer) -> Gemini answers from the top-k.
-- **Knobs (18 plans):** model x top-k (2, 5, 10) x thinking (low, high).
+- **Knobs:** model x top-k (2, 5, 10) x thinking (low, high): 12 plans with the free set's 2 models, 18 with 3.
 - **Models, free set (default, costs $0):** `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.6-flash`,
   all on the Gemini API free tier. (`gemini-3.8-flash` was tried first but was overloaded and hit its daily free
-  quota within a few calls.) Override any tier with `PATHWISE_BENCH_LARGE_MODEL=...` (also `_SMALL_`, `_MEDIUM_`). **Paid set** (`PATHWISE_BENCH_MODELS=paid`, needs billing):
+  quota within a few calls.) Override any tier with `PATHWISE_BENCH_LARGE_MODEL=...` (also `_SMALL_`, `_MEDIUM_`).
+  **The free set runs only small + medium by default**: free-tier Flash models (`large`) allowed only about 20-30
+  calls a day in our runs, Flash-Lite models hundreds. Add the large tier with `PATHWISE_BENCH_TIERS=small,medium,large`. **Paid set** (`PATHWISE_BENCH_MODELS=paid`, needs billing):
   `gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-4-argon`.
 - **Quality:** token F1 against the gold answer (official HotpotQA rules). Deterministic, so no judge noise.
 - **Cost:** real token usage x official paid-tier list prices (`config.ts`, checked Nov 8, 2026), thinking billed as
@@ -28,7 +30,7 @@ the original host, curtis.ml.cmu.edu, no longer resolves). It stays local (`data
 export GEMINI_API_KEY=...            # free key from Google AI Studio; never committed or logged
 
 npm run bench:rag:smoke              # 3 tiny calls: checks the key, model ids and usage fields
-npm run bench:rag:pilot              # 18 plans x 20 questions (360 calls, ~40 min at 10/min): suggests --sla
+npm run bench:rag:pilot              # 12 plans x 20 questions (240 calls, ~25 min at 10/min): suggests --sla
 npm run bench:rag -- --sla 0.XX      # main run: 100 calibration + 200 test questions
 ```
 
