@@ -28,6 +28,12 @@ export class DailyQuotaError extends Error {}
 /** A model kept timing out or returning server errors. Re-run later: finished calls are cached. */
 export class ModelUnavailableError extends Error {}
 
+/** Set once a run hits a fatal error, so calls still in flight stop instead of retrying in the background. */
+let stopping = false;
+export function stopAll() {
+  stopping = true;
+}
+
 /** Per-request timeout. Answers are a few words; even high thinking rarely needs more than a minute. */
 const REQUEST_TIMEOUT_MS = Number(process.env.PATHWISE_BENCH_TIMEOUT_MS ?? 90_000);
 /** Attempts per call before giving up on a model (timeouts, network errors, 5xx, per-minute 429s). */
@@ -131,6 +137,7 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
     store: false,
   });
   const retry = async (attempt: number, reason: string) => {
+    if (stopping) throw new ModelUnavailableError("Run is stopping.");
     if (attempt + 1 >= MAX_ATTEMPTS) {
       throw new ModelUnavailableError(
         `${model} failed ${MAX_ATTEMPTS} times in a row (last: ${reason}). It is probably overloaded. ` +
@@ -143,6 +150,7 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
   };
   for (let attempt = 0; ; attempt++) {
     await throttle();
+    if (stopping) throw new ModelUnavailableError("Run is stopping.");
     const start = performance.now();
     let res: Response;
     try {
