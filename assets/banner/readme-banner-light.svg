@@ -4,8 +4,8 @@
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap');
       .banner-title { font-family: 'Inter', -apple-system, sans-serif; font-weight: 700; font-size: 42px; letter-spacing: -0.02em; fill: #0B1220; }
       .banner-tagline { font-family: 'Inter', -apple-system, sans-serif; font-weight: 500; font-size: 20px; fill: #64748B; }
-      .mono-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #64748B; }
-      .mono-active { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; fill: #0D9488; }
+      .mono-label { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; fill: #64748B; }
+      .mono-active { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; fill: #0D9488; }
     </style>
     <pattern id="grid-light" width="24" height="24" patternUnits="userSpaceOnUse">
       <circle cx="2" cy="2" r="1" fill="#E2E8F0" />
@@ -16,8 +16,8 @@
   <rect width="1280" height="320" fill="#F7F8FA"/>
   <rect width="1280" height="320" fill="url(#grid-light)"/>
 
-  <!-- Left Side: Brand & Tagline -->
-  <g transform="translate(64, 96)">
+  <!-- Left Side: Brand & Tagline with 48px padding -->
+  <g transform="translate(48, 96)">
     <!-- Small Mark inline -->
     <g transform="translate(0, 0) scale(0.12)">
       <circle cx="88" cy="256" r="32" fill="#0B1220"/>
@@ -31,61 +31,47 @@
     <text x="2" y="88" class="banner-tagline">The cheapest path to the answer.</text>
   </g>
 
-  <!-- Right Side: Detailed Graph (8 branches, 1 chosen teal route) -->
-  <g transform="translate(680, 40)">
-    <!-- Branch A (top expensive) -->
-    <path d="M 40 120 L 140 40 L 320 40 L 480 30" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="140" cy="40" r="4" fill="#CBD5E1"/>
-    <circle cx="320" cy="40" r="4" fill="#CBD5E1"/>
-    <circle cx="480" cy="30" r="4" fill="#CBD5E1"/>
-    <text x="495" y="34" class="mono-label">large · rerank ($0.042)</text>
+  <!-- Right Side: Graph shifted left, safe 48px padding on right, real plans only -->
+  <g transform="translate(540, 48)">
+    <!-- Branch 1: large · rerank · topK 10 -->
+    <path d="M 20 112 L 100 32 L 240 32 L 350 32" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="100" cy="32" r="4" fill="#CBD5E1"/>
+    <circle cx="240" cy="32" r="4" fill="#CBD5E1"/>
+    <circle cx="350" cy="32" r="4" fill="#CBD5E1"/>
+    <text x="368" y="36" class="mono-label">large · rerank · topK 10</text>
 
-    <!-- Branch B -->
-    <path d="M 40 120 L 160 70 L 340 70 L 480 70" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="160" cy="70" r="4" fill="#CBD5E1"/>
-    <circle cx="340" cy="70" r="4" fill="#CBD5E1"/>
-    <circle cx="480" cy="70" r="4" fill="#CBD5E1"/>
-    <text x="495" y="74" class="mono-label">large · topK 5 ($0.033)</text>
+    <!-- Branch 2: large · rerank · topK 2 -->
+    <path d="M 20 112 L 120 72 L 250 72 L 350 72" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="120" cy="72" r="4" fill="#CBD5E1"/>
+    <circle cx="250" cy="72" r="4" fill="#CBD5E1"/>
+    <circle cx="350" cy="72" r="4" fill="#CBD5E1"/>
+    <text x="368" y="76" class="mono-label">large · rerank · topK 2</text>
 
-    <!-- Branch C -->
-    <path d="M 40 120 L 180 100 L 330 100 L 480 100" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="180" cy="100" r="4" fill="#CBD5E1"/>
-    <circle cx="330" cy="100" r="4" fill="#CBD5E1"/>
-    <circle cx="480" cy="100" r="4" fill="#CBD5E1"/>
-    <text x="495" y="104" class="mono-label">medium · rerank</text>
-
-    <!-- Branch D (THE CHOSEN PATH) -->
-    <path d="M 40 120 L 480 120" stroke="#0D9488" stroke-width="4.5" stroke-linecap="round"/>
-    <circle cx="180" cy="120" r="5" fill="#0D9488"/>
-    <circle cx="340" cy="120" r="5" fill="#0D9488"/>
-    <circle cx="480" cy="120" r="14" stroke="#0D9488" stroke-width="3" fill="none"/>
-    <circle cx="480" cy="120" r="6" fill="#0D9488"/>
+    <!-- Branch 3: THE CHOSEN PATH (small · topK 2) -->
+    <path d="M 20 112 L 350 112" stroke="#0D9488" stroke-width="4.5" stroke-linecap="round"/>
+    <circle cx="130" cy="112" r="5" fill="#0D9488"/>
+    <circle cx="250" cy="112" r="5" fill="#0D9488"/>
+    <circle cx="350" cy="112" r="13" stroke="#0D9488" stroke-width="3" fill="none"/>
+    <circle cx="350" cy="112" r="6" fill="#0D9488"/>
     <!-- Active Pill Badge -->
-    <rect x="502" y="106" width="170" height="26" rx="4" fill="rgba(13, 148, 136, 0.1)" stroke="rgba(13, 148, 136, 0.25)" stroke-width="1"/>
-    <text x="512" y="123" class="mono-active">small · topK 2 ($0.0049)</text>
+    <rect x="368" y="98" width="138" height="28" rx="4" fill="rgba(13, 148, 136, 0.1)" stroke="rgba(13, 148, 136, 0.3)" stroke-width="1"/>
+    <text x="378" y="117" class="mono-active">small · topK 2</text>
 
-    <!-- Branch E -->
-    <path d="M 40 120 L 180 145 L 330 145 L 480 145" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="180" cy="145" r="4" fill="#CBD5E1"/>
-    <circle cx="330" cy="145" r="4" fill="#CBD5E1"/>
-    <circle cx="480" cy="145" r="4" fill="#CBD5E1"/>
-    <text x="495" y="149" class="mono-label">medium · topK 2</text>
+    <!-- Branch 4: medium · topK 2 -->
+    <path d="M 20 112 L 120 152 L 250 152 L 350 152" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="120" cy="152" r="4" fill="#CBD5E1"/>
+    <circle cx="250" cy="152" r="4" fill="#CBD5E1"/>
+    <circle cx="350" cy="152" r="4" fill="#CBD5E1"/>
+    <text x="368" y="156" class="mono-label">medium · topK 2</text>
 
-    <!-- Branch F -->
-    <path d="M 40 120 L 160 175 L 340 175 L 480 175" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="160" cy="175" r="4" fill="#CBD5E1"/>
-    <circle cx="340" cy="175" r="4" fill="#CBD5E1"/>
-    <circle cx="480" cy="175" r="4" fill="#CBD5E1"/>
-    <text x="495" y="179" class="mono-label">small · topK 5</text>
-
-    <!-- Branch G (bottom) -->
-    <path d="M 40 120 L 140 210 L 320 210 L 480 210" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="140" cy="210" r="4" fill="#CBD5E1"/>
-    <circle cx="320" cy="210" r="4" fill="#CBD5E1"/>
-    <circle cx="480" cy="210" r="4" fill="#CBD5E1"/>
-    <text x="495" y="214" class="mono-label">small · no-retrieval</text>
+    <!-- Branch 5: large · topK 2 -->
+    <path d="M 20 112 L 100 192 L 240 192 L 350 192" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="100" cy="192" r="4" fill="#CBD5E1"/>
+    <circle cx="240" cy="192" r="4" fill="#CBD5E1"/>
+    <circle cx="350" cy="192" r="4" fill="#CBD5E1"/>
+    <text x="368" y="196" class="mono-label">large · topK 2</text>
 
     <!-- Start Node -->
-    <circle cx="40" cy="120" r="9" fill="#0B1220"/>
+    <circle cx="20" cy="112" r="8" fill="#0B1220"/>
   </g>
 </svg>
