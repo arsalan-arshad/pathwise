@@ -21,6 +21,8 @@ export interface CallResult {
 }
 
 export class BudgetExceeded extends Error {}
+/** The key has no quota for a model at all (free tier). Retrying cannot help. */
+export class QuotaError extends Error {}
 
 const MOCK = process.env.PATHWISE_BENCH_MOCK === "1";
 const CACHE_DIR = new URL(MOCK ? "mock/" : "live/", PATHS.cache);
@@ -109,6 +111,16 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
       throw err;
     }
     const latencyMs = performance.now() - start;
+    if (res.status === 429) {
+      // A hard zero quota (e.g. a model unavailable on the free tier) will never succeed: stop now.
+      const text = await res.clone().text();
+      if (/limit:\s*0\b|free tier/i.test(text)) {
+        throw new QuotaError(
+          `${model} is not available with this API key (${text.slice(0, 200)}). ` +
+            "Enable billing for the key's Google Cloud project (AI Studio > Get API key > set up billing), then re-run.",
+        );
+      }
+    }
     if (res.status === 429 || res.status >= 500) {
       if (attempt < 6) {
         await sleep(Math.min(60_000, 2000 * 2 ** attempt));
@@ -151,17 +163,24 @@ interface InteractionResponse {
 export async function rawSmokeCall(tier: Tier, thinking: "low" | "high", prompt: string): Promise<unknown> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Set GEMINI_API_KEY in your environment (export GEMINI_API_KEY=...)");
-  const res = await fetch(ENDPOINT, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      model: MODELS[tier],
-      input: prompt,
-      generation_config: { thinking_level: thinking, max_output_tokens: MAX_OUTPUT_TOKENS },
-      store: false,
-    }),
-  });
-  return { status: res.status, body: await res.json() };
+  // Retry temporary overload (503) a few times so one demand spike does not fail the check.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        model: MODELS[tier],
+        input: prompt,
+        generation_config: { thinking_level: thinking, max_output_tokens: MAX_OUTPUT_TOKENS },
+        store: false,
+      }),
+    });
+    if (res.status >= 500 && attempt < 4) {
+      await sleep(5000 * 2 ** attempt);
+      continue;
+    }
+    return { status: res.status, attempts: attempt + 1, body: await res.json() };
+  }
 }
 
 // ---------------------------------------------------------------- mock (offline testing only)
