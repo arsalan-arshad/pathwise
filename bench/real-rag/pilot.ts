@@ -9,7 +9,7 @@
  */
 import { MODELS, SPACE, BUDGET_USD, type Tier } from "./config.js";
 import { loadHotpot, sample } from "./dataset.js";
-import { BudgetExceeded, rawSmokeCall, spendSoFar } from "./gemini.js";
+import { BudgetExceeded, QuotaError, rawSmokeCall, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer } from "./pipeline.js";
 import { enumeratePlans, planKey } from "../../src/index.js";
 
@@ -51,7 +51,7 @@ try {
     console.log(`  ${key.padEnd(40)} done   spent $${s.spentUsd.toFixed(2)} / $${BUDGET_USD}`);
   }
 } catch (err) {
-  if (err instanceof BudgetExceeded) console.error(`\n${err.message}`);
+  if (err instanceof BudgetExceeded || err instanceof QuotaError) console.error(`\n${err.message}`);
   else throw err;
 }
 

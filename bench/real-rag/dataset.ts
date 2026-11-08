@@ -1,7 +1,7 @@
 /** HotpotQA dev (distractor setting): download once, sample deterministically, retrieve with BM25. */
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { DATASET_URL, PATHS } from "./config.js";
+import { DATASET_ROWS_URL, PATHS } from "./config.js";
 
 export interface HotpotExample {
   _id: string;
@@ -30,16 +30,61 @@ export interface Question {
 
 const FILE = new URL("hotpot_dev_distractor_v1.json", PATHS.data);
 
-/** Downloads the dev set (~46 MB) on first use. */
+/** Hugging Face row shape (parallel lists instead of pairs). */
+interface HfRow {
+  id: string;
+  question: string;
+  answer: string;
+  type: "comparison" | "bridge";
+  level: "easy" | "medium" | "hard";
+  supporting_facts: { title: string[]; sent_id: number[] };
+  context: { title: string[]; sentences: string[][] };
+}
+
+/** Downloads the dev set (7,405 questions, ~75 pages) on first use and caches it as one JSON file. */
 export async function loadHotpot(): Promise<HotpotExample[]> {
   if (!existsSync(FILE)) {
     await mkdir(PATHS.data, { recursive: true });
-    console.log(`Downloading HotpotQA dev set from ${DATASET_URL} ...`);
-    const res = await fetch(DATASET_URL);
-    if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}. Download it manually to ${FILE.pathname}`);
-    await writeFile(FILE, Buffer.from(await res.arrayBuffer()));
+    const examples: HotpotExample[] = [];
+    let total = Infinity;
+    for (let offset = 0; offset < total; offset += 100) {
+      const page = await fetchPage(offset);
+      total = page.num_rows_total;
+      for (const { row, truncated_cells } of page.rows) {
+        if (truncated_cells.length > 0) throw new Error(`Row ${row.id} came back truncated; try again later`);
+        examples.push({
+          _id: row.id,
+          question: row.question,
+          answer: row.answer,
+          type: row.type,
+          level: row.level,
+          supporting_facts: row.supporting_facts.title.map((t, i) => [t, row.supporting_facts.sent_id[i]]),
+          context: row.context.title.map((t, i) => [t, row.context.sentences[i]]),
+        });
+      }
+      process.stdout.write(`\rDownloading HotpotQA dev set from Hugging Face: ${examples.length}/${total}`);
+    }
+    process.stdout.write("\n");
+    await writeFile(FILE, JSON.stringify(examples));
   }
   return JSON.parse(await readFile(FILE, "utf8")) as HotpotExample[];
+}
+
+async function fetchPage(offset: number) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${DATASET_ROWS_URL}&offset=${offset}&length=100`, { signal: AbortSignal.timeout(60_000) });
+      if (res.ok) {
+        return (await res.json()) as { num_rows_total: number; rows: Array<{ row: HfRow; truncated_cells: string[] }> };
+      }
+      if (attempt >= 5 || (res.status < 500 && res.status !== 429)) {
+        throw new Error(`Dataset download failed at offset ${offset}: HTTP ${res.status}`);
+      }
+    } catch (err) {
+      if (attempt >= 5) throw err;
+    }
+    await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+  }
 }
 
 /** Deterministic shuffle, then disjoint calibration and test slices. */

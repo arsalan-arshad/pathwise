@@ -58,4 +58,9 @@ export const PATHS = {
   results: new URL("./results/", import.meta.url),
 };
 
-export const DATASET_URL = "http://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json";
+/**
+ * HotpotQA dev, distractor setting, via the Hugging Face dataset viewer API (100 rows per page).
+ * The original host (curtis.ml.cmu.edu) no longer resolves.
+ */
+export const DATASET_ROWS_URL =
+  "https://datasets-server.huggingface.co/rows?dataset=hotpotqa/hotpot_qa&config=distractor&split=validation";

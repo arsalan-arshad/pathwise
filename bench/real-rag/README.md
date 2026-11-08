@@ -12,6 +12,14 @@ Everything else in this repo is a simulation; this is where the numbers become r
 
 Prices change: `gemini-4-argon` doubles on Dec 1, 2026 and `gemini-3.8-flash` on Jan 1, 2027. `config.ts` applies them by date.
 
+## Before you start
+
+- **Billing must be on for your API key.** On the free tier `gemini-4-argon` has a quota of 0, and the other
+  models have low rate limits. In Google AI Studio, open *Get API key*, pick the key's project and set up billing.
+  The harness stops immediately with a clear message if a model has no quota.
+- The dataset (7,405 questions) is fetched from the Hugging Face dataset viewer on first run, about 75 requests.
+  The original host, curtis.ml.cmu.edu, no longer resolves.
+
 ## Run it (about 30-45 minutes, under $25)
 
 ```bash
