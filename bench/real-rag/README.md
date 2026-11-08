@@ -5,8 +5,9 @@ Everything else in this repo is a simulation; this is where the numbers become r
 
 - **Pipeline:** BM25 over each question's 10 paragraphs (2 contain the answer) -> Gemini answers from the top-k.
 - **Knobs (18 plans):** model x top-k (2, 5, 10) x thinking (low, high).
-- **Models, free set (default, costs $0):** `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.8-flash`,
-  all on the Gemini API free tier. **Paid set** (`PATHWISE_BENCH_MODELS=paid`, needs billing):
+- **Models, free set (default, costs $0):** `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.6-flash`,
+  all on the Gemini API free tier. (`gemini-3.8-flash` was tried first but was overloaded and hit its daily free
+  quota within a few calls.) Override any tier with `PATHWISE_BENCH_LARGE_MODEL=...` (also `_SMALL_`, `_MEDIUM_`). **Paid set** (`PATHWISE_BENCH_MODELS=paid`, needs billing):
   `gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-4-argon`.
 - **Quality:** token F1 against the gold answer (official HotpotQA rules). Deterministic, so no judge noise.
 - **Cost:** real token usage x official paid-tier list prices (`config.ts`, checked Nov 8, 2026), thinking billed as
@@ -42,7 +43,7 @@ benchmark only sends public HotpotQA text; do not send private data on a free ke
 ## Known limits
 
 - HotpotQA is public and old: models may have seen it in training, which flatters small models.
-- The free set's largest model is `gemini-3.8-flash`, not a frontier model, so the price gap between plans is
+- The free set's largest model is `gemini-3.6-flash`, not a frontier model, so the price gap between plans is
   smaller than in a real stack that tops out at a frontier model. Savings measured here are likely an underestimate.
 - One dataset, one provider, one run: treat the result as a first real data point, not a general claim.
 - Gemini 4 / 3.6+ ignore temperature, so answers vary between runs; the cache freezes one sample.

@@ -14,7 +14,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createPlanner, hashedTextFeaturizer, planKey, type Plan } from "../../src/index.js";
 import { BASELINES, BUDGET_USD, MODELS, PATHS, SPACE } from "./config.js";
 import { loadHotpot, sample, type Question } from "./dataset.js";
-import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, setRpm, spendSoFar } from "./gemini.js";
+import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, stopAll, setRpm, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer, type Answer } from "./pipeline.js";
 
 const args = process.argv.slice(2);
@@ -116,6 +116,7 @@ try {
   results.push(await runFixed("Typical default", { ...BASELINES.typical }));
   results.push(await runFixed("Always max", { ...BASELINES.max }));
 } catch (err) {
+  stopAll();
   if (!(err instanceof BudgetExceeded || err instanceof QuotaError || err instanceof DailyQuotaError || err instanceof ModelUnavailableError)) throw err;
   stopped = err.message;
   if (err instanceof DailyQuotaError || err instanceof ModelUnavailableError) stopped += " Results below are partial.";
@@ -166,3 +167,5 @@ await writeFile(
 );
 console.log("\n" + lines.join("\n"));
 console.log(`\nSaved to bench/real-rag/results/${base.pathname.split("/").pop()}.md`);
+// Exit even if a cancelled call is still sleeping between retries.
+process.exit(0);

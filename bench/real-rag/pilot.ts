@@ -9,7 +9,7 @@
  */
 import { MODELS, SPACE, BUDGET_USD, type Tier } from "./config.js";
 import { loadHotpot, sample } from "./dataset.js";
-import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, rawSmokeCall, setRpm, spendSoFar } from "./gemini.js";
+import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, stopAll, rawSmokeCall, setRpm, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer } from "./pipeline.js";
 import { enumeratePlans, planKey } from "../../src/index.js";
 
@@ -52,6 +52,7 @@ try {
     console.log(`  ${key.padEnd(40)} done   spent $${s.spentUsd.toFixed(2)} / $${BUDGET_USD}`);
   }
 } catch (err) {
+  stopAll();
   if (err instanceof BudgetExceeded || err instanceof QuotaError || err instanceof DailyQuotaError || err instanceof ModelUnavailableError) console.error(`\n${err.message}`);
   else throw err;
 }
@@ -115,3 +116,5 @@ console.log(
       ? `\nFree tier: you were billed $0. List-price equivalent of all calls so far: $${s.spentUsd.toFixed(2)}.`
       : `\nTotal real spend so far: $${s.spentUsd.toFixed(2)} of $${BUDGET_USD}.`,
 );
+// Exit even if a cancelled call is still sleeping between retries.
+process.exit(0);
