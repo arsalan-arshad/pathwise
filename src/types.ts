@@ -29,6 +29,19 @@ export type Featurizer<I> = (input: I) => number[];
 export interface SLA {
   /** Minimum predicted quality (0..1), e.g. 0.9 = "90% of answers must be right". */
   minQuality: number;
+  /**
+   * Turn the SLA into a guarantee: the probability (e.g. 0.9) that average delivered quality meets
+   * minQuality on traffic like the calibration sample. The planner then raises its internal quality
+   * threshold until a leave-one-out replay of calibration data clears minQuality with this confidence.
+   * Omit for v0.1 behaviour (plans chosen on mean predicted quality).
+   */
+  confidence?: number;
+  /**
+   * Only with confidence: what to do when calibration data cannot certify the SLA.
+   * "safe" (default): pick the highest predicted-quality plan for every request until it can.
+   * "best-effort": use the threshold that came closest. Either way CalibrationReport.slaCertified is false.
+   */
+  onUncertified?: "safe" | "best-effort";
   maxLatencyMs?: number;
   maxCostUsd?: number;
 }
@@ -98,4 +111,13 @@ export interface CalibrationReport {
    * plans are credited with the winner's score. False = conservative (they get no credit).
    */
   assumeMonotone: boolean;
+  /** Predicted quality a plan must reach to be chosen (= sla.minQuality unless sla.confidence is set). */
+  qualityThreshold: number;
+  /**
+   * Only with sla.confidence: lower confidence bound on average quality when replaying the calibration
+   * queries leave-one-out at qualityThreshold. NaN when not computed.
+   */
+  certifiedQuality: number;
+  /** True when certifiedQuality >= sla.minQuality. False means no threshold could certify the SLA. */
+  slaCertified: boolean;
 }
