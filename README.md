@@ -30,6 +30,42 @@ await planner.calibrate(sampleQueries);
 const { output, plan } = await planner.run(userQuery);
 ```
 
+## SLA guarantee
+
+By default Pathwise picks the cheapest plan whose *average* predicted quality meets `minQuality`.
+Set `confidence` to turn that into a guarantee you can check:
+
+```ts
+const planner = createPlanner({
+  // ...
+  sla: { minQuality: 0.95, confidence: 0.9 }, // 90% confidence that delivered quality >= 95%
+  scorerErrorRate: 0.1, // your LLM judge disagrees with human labels 10% of the time
+});
+
+const report = await planner.calibrate(sampleQueries);
+report.slaCertified; // false = not enough evidence yet; Pathwise plays safe (or set onUncertified: "best-effort")
+```
+
+How it works: after calibration, Pathwise replays every calibration query as if it had never seen it,
+and raises its internal quality bar until the replayed results clear `minQuality` at the requested
+confidence (Wilson lower bound). If no bar does, it runs the best plan for every request until you
+add calibration samples. With a noisy judge, set `scorerErrorRate`: calibration then majority-votes
+each verdict, confirms passes with extra votes, and corrects scores for the judge's error rate.
+
+Simulated benchmark (`npm run bench:sla`, **synthetic**, 20 random workloads per row, 1,000 production queries,
+"messy" = question text predicts difficulty poorly, "noisy" = judge wrong 10% of the time):
+
+| Scenario (95% SLA) | Calibration samples | SLA misses: average-based | SLA misses: guaranteed | Cost: average-based | Cost: guaranteed |
+|---|---|---|---|---|---|
+| messy | 90 | 17/20 | **0/20** | $7.12 | $30.28 |
+| messy | 300 | 17/20 | **0/20** | $6.84 | $14.06 |
+| messy + noisy judge | 300 | 4/20 | **0/20** | $21.41 | $23.08 |
+| clean | 300 | 0/20 | 0/20 | $5.16 | $5.16 |
+
+The guarantee costs money when evidence is thin and gets cheaper with more calibration data.
+Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 runs;
+the average-based mode missed 45. Real pipelines will differ.
+
 ## Demo
 
 ```bash

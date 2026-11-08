@@ -31,7 +31,8 @@
   "scripts": {
     "build": "tsc",
     "demo": "tsx examples/demo.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts"
+    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts",
+    "bench:sla": "tsx examples/sla-bench.ts"
   },
   "license": "MIT",
   "engines": {
