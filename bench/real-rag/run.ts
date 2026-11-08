@@ -14,7 +14,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createPlanner, hashedTextFeaturizer, planKey, type Plan } from "../../src/index.js";
 import { BASELINES, BUDGET_USD, MODELS, PATHS, SPACE } from "./config.js";
 import { loadHotpot, sample, type Question } from "./dataset.js";
-import { BudgetExceeded, spendSoFar } from "./gemini.js";
+import { BudgetExceeded, QuotaError, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer, type Answer } from "./pipeline.js";
 
 const args = process.argv.slice(2);
@@ -115,7 +115,7 @@ try {
   results.push(await runFixed("Typical default", { ...BASELINES.typical }));
   results.push(await runFixed("Always max", { ...BASELINES.max }));
 } catch (err) {
-  if (!(err instanceof BudgetExceeded)) throw err;
+  if (!(err instanceof BudgetExceeded || err instanceof QuotaError)) throw err;
   stopped = err.message;
   console.error(`\n${stopped}`);
 }
