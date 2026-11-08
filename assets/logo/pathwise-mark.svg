@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <!-- Unchosen branch 1 (top) -->
+  <path d="M 88 256 L 160 140 L 310 140 L 424 120" stroke="#94A3B8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="160" cy="140" r="8" fill="#94A3B8"/>
+  <circle cx="310" cy="140" r="8" fill="#94A3B8"/>
+  <circle cx="424" cy="120" r="8" fill="#94A3B8"/>
+
+  <!-- Unchosen branch 2 (upper-mid) -->
+  <path d="M 88 256 L 180 195 L 320 195 L 424 185" stroke="#94A3B8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="180" cy="195" r="8" fill="#94A3B8"/>
+  <circle cx="320" cy="195" r="8" fill="#94A3B8"/>
+  <circle cx="424" cy="185" r="8" fill="#94A3B8"/>
+
+  <!-- Unchosen branch 4 (lower-mid) -->
+  <path d="M 88 256 L 180 317 L 320 317 L 424 327" stroke="#94A3B8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="180" cy="317" r="8" fill="#94A3B8"/>
+  <circle cx="320" cy="317" r="8" fill="#94A3B8"/>
+  <circle cx="424" cy="327" r="8" fill="#94A3B8"/>
+
+  <!-- Unchosen branch 5 (bottom) -->
+  <path d="M 88 256 L 160 372 L 310 372 L 424 392" stroke="#94A3B8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="160" cy="372" r="8" fill="#94A3B8"/>
+  <circle cx="310" cy="372" r="8" fill="#94A3B8"/>
+  <circle cx="424" cy="392" r="8" fill="#94A3B8"/>
+
+  <!-- THE CHOSEN PATH (bold accent) -->
+  <path d="M 88 256 L 424 256" stroke="#0D9488" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="230" cy="256" r="10" fill="#0D9488"/>
+  <circle cx="330" cy="256" r="10" fill="#0D9488"/>
+
+  <!-- Start Node -->
+  <circle cx="88" cy="256" r="16" fill="#0B1220"/>
+
+  <!-- Target Node (Double ring / target) -->
+  <circle cx="424" cy="256" r="22" stroke="#0D9488" stroke-width="5" fill="none"/>
+  <circle cx="424" cy="256" r="10" fill="#0D9488"/>
+</svg>
