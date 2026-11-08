@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { BUDGET_USD, MAX_OUTPUT_TOKENS, MODELS, PATHS, priceFor, type Tier } from "./config.js";
+import { BUDGET_USD, DEFAULT_RPM, MAX_OUTPUT_TOKENS, MODEL_SET, MODELS, PATHS, priceFor, type Tier } from "./config.js";
 
 export interface CallResult {
   text: string;
@@ -23,9 +23,11 @@ export interface CallResult {
 export class BudgetExceeded extends Error {}
 /** The key has no quota for a model at all (free tier). Retrying cannot help. */
 export class QuotaError extends Error {}
+/** The daily request quota is used up. Re-run tomorrow: finished calls are cached. */
+export class DailyQuotaError extends Error {}
 
 const MOCK = process.env.PATHWISE_BENCH_MOCK === "1";
-const CACHE_DIR = new URL(MOCK ? "mock/" : "live/", PATHS.cache);
+const CACHE_DIR = new URL(MOCK ? "mock/" : `live-${MODEL_SET}/`, PATHS.cache);
 const CACHE_FILE = new URL("responses.jsonl", CACHE_DIR);
 const LEDGER_FILE = new URL("spend.jsonl", CACHE_DIR);
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -54,7 +56,35 @@ async function init() {
 }
 
 export function spendSoFar() {
-  return { spentUsd: spent, budgetUsd: BUDGET_USD, realCalls, mock: MOCK };
+  return { spentUsd: spent, budgetUsd: BUDGET_USD, realCalls, mock: MOCK, modelSet: MODEL_SET };
+}
+
+// ---------------------------------------------------------------- rate limiting
+
+let rpm = Number(process.env.PATHWISE_BENCH_RPM ?? DEFAULT_RPM);
+const starts: number[] = [];
+let gate: Promise<void> = Promise.resolve();
+
+/** Requests per minute across all models (free-tier keys have low limits). */
+export function setRpm(n: number) {
+  if (n > 0) rpm = n;
+}
+
+/** Waits until starting one more request keeps us under `rpm` in any 60 s window. */
+function throttle(): Promise<void> {
+  const next = gate.then(async () => {
+    for (;;) {
+      const now = Date.now();
+      while (starts.length > 0 && now - starts[0] >= 60_000) starts.shift();
+      if (starts.length < rpm) {
+        starts.push(now);
+        return;
+      }
+      await sleep(60_000 - (now - starts[0]) + 50);
+    }
+  });
+  gate = next.catch(() => undefined);
+  return next;
 }
 
 export async function generate(tier: Tier, thinking: "low" | "high", prompt: string, mock?: MockHint): Promise<CallResult> {
@@ -94,6 +124,7 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
     store: false,
   });
   for (let attempt = 0; ; attempt++) {
+    await throttle();
     const start = performance.now();
     let res: Response;
     try {
@@ -112,14 +143,23 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
     }
     const latencyMs = performance.now() - start;
     if (res.status === 429) {
-      // A hard zero quota (e.g. a model unavailable on the free tier) will never succeed: stop now.
       const text = await res.clone().text();
-      if (/limit:\s*0\b|free tier/i.test(text)) {
+      // A hard zero quota (e.g. a model unavailable on the free tier) will never succeed: stop now.
+      if (/limit:\s*0\b/i.test(text)) {
         throw new QuotaError(
-          `${model} is not available with this API key (${text.slice(0, 200)}). ` +
-            "Enable billing for the key's Google Cloud project (AI Studio > Get API key > set up billing), then re-run.",
+          `${model} has no quota for this API key (${text.slice(0, 200)}). ` +
+            "Use the free model set (default) or enable billing for the key's project.",
         );
       }
+      // Daily quota used up: stop cleanly; the cache lets the next run continue where this one stopped.
+      if (/per\s*day|perday|daily/i.test(text)) {
+        throw new DailyQuotaError(
+          `Daily free-tier quota for ${model} is used up. Run the same command again tomorrow: ` +
+            "everything finished so far is cached and will not be re-requested.",
+        );
+      }
+      // Per-minute limit: slow down for the rest of this run.
+      if (rpm > 2) rpm = Math.max(2, Math.floor(rpm * 0.7));
     }
     if (res.status === 429 || res.status >= 500) {
       if (attempt < 6) {
