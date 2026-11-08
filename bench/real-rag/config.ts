@@ -10,12 +10,19 @@
  */
 
 const MODEL_SETS = {
-  free: { small: "gemini-3.1-flash-lite", medium: "gemini-3.5-flash-lite", large: "gemini-3.8-flash" },
+  // gemini-3.8-flash was the first choice for "large", but on the free tier it timed out, returned 503s and hit
+  // its daily quota within a few calls (Nov 8, 2026). gemini-3.6-flash has the same list price and free tier.
+  free: { small: "gemini-3.1-flash-lite", medium: "gemini-3.5-flash-lite", large: "gemini-3.6-flash" },
   paid: { small: "gemini-3.5-flash-lite", medium: "gemini-3.8-flash", large: "gemini-4-argon" },
 } as const;
 
 export const MODEL_SET: keyof typeof MODEL_SETS = process.env.PATHWISE_BENCH_MODELS === "paid" ? "paid" : "free";
-export const MODELS: Record<"small" | "medium" | "large", string> = MODEL_SETS[MODEL_SET];
+/** Override any tier with PATHWISE_BENCH_SMALL_MODEL / _MEDIUM_MODEL / _LARGE_MODEL (must have a price below). */
+export const MODELS: Record<"small" | "medium" | "large", string> = {
+  small: process.env.PATHWISE_BENCH_SMALL_MODEL ?? MODEL_SETS[MODEL_SET].small,
+  medium: process.env.PATHWISE_BENCH_MEDIUM_MODEL ?? MODEL_SETS[MODEL_SET].medium,
+  large: process.env.PATHWISE_BENCH_LARGE_MODEL ?? MODEL_SETS[MODEL_SET].large,
+};
 export type Tier = keyof typeof MODELS;
 
 interface Price {
@@ -30,6 +37,7 @@ export function priceOf(model: string, at: Date = new Date()): Price {
       return { inputPerM: 0.25, outputPerM: 1.5 };
     case "gemini-3.5-flash-lite":
       return { inputPerM: 0.3, outputPerM: 2.5 };
+    case "gemini-3.6-flash":
     case "gemini-3.8-flash":
       return at < new Date("2027-01-01T00:00:00Z")
         ? { inputPerM: 0.75, outputPerM: 3.75 }
