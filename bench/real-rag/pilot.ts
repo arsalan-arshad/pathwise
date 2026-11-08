@@ -9,7 +9,7 @@
  */
 import { MODELS, SPACE, BUDGET_USD, type Tier } from "./config.js";
 import { loadHotpot, sample } from "./dataset.js";
-import { BudgetExceeded, DailyQuotaError, QuotaError, rawSmokeCall, setRpm, spendSoFar } from "./gemini.js";
+import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, rawSmokeCall, setRpm, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer } from "./pipeline.js";
 import { enumeratePlans, planKey } from "../../src/index.js";
 
@@ -52,7 +52,7 @@ try {
     console.log(`  ${key.padEnd(40)} done   spent $${s.spentUsd.toFixed(2)} / $${BUDGET_USD}`);
   }
 } catch (err) {
-  if (err instanceof BudgetExceeded || err instanceof QuotaError || err instanceof DailyQuotaError) console.error(`\n${err.message}`);
+  if (err instanceof BudgetExceeded || err instanceof QuotaError || err instanceof DailyQuotaError || err instanceof ModelUnavailableError) console.error(`\n${err.message}`);
   else throw err;
 }
 

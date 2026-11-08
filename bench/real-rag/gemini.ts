@@ -25,6 +25,13 @@ export class BudgetExceeded extends Error {}
 export class QuotaError extends Error {}
 /** The daily request quota is used up. Re-run tomorrow: finished calls are cached. */
 export class DailyQuotaError extends Error {}
+/** A model kept timing out or returning server errors. Re-run later: finished calls are cached. */
+export class ModelUnavailableError extends Error {}
+
+/** Per-request timeout. Answers are a few words; even high thinking rarely needs more than a minute. */
+const REQUEST_TIMEOUT_MS = Number(process.env.PATHWISE_BENCH_TIMEOUT_MS ?? 90_000);
+/** Attempts per call before giving up on a model (timeouts, network errors, 5xx, per-minute 429s). */
+const MAX_ATTEMPTS = 8;
 
 const MOCK = process.env.PATHWISE_BENCH_MOCK === "1";
 const CACHE_DIR = new URL(MOCK ? "mock/" : `live-${MODEL_SET}/`, PATHS.cache);
@@ -123,6 +130,17 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
     generation_config: { thinking_level: thinking, max_output_tokens: MAX_OUTPUT_TOKENS },
     store: false,
   });
+  const retry = async (attempt: number, reason: string) => {
+    if (attempt + 1 >= MAX_ATTEMPTS) {
+      throw new ModelUnavailableError(
+        `${model} failed ${MAX_ATTEMPTS} times in a row (last: ${reason}). It is probably overloaded. ` +
+          "Run the same command again later: everything finished so far is cached.",
+      );
+    }
+    const waitMs = Math.min(120_000, 5000 * 2 ** attempt);
+    console.log(`    ${model}: ${reason}; retry ${attempt + 2}/${MAX_ATTEMPTS} in ${Math.round(waitMs / 1000)}s`);
+    await sleep(waitMs);
+  };
   for (let attempt = 0; ; attempt++) {
     await throttle();
     const start = performance.now();
@@ -132,14 +150,12 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
         body,
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (err) {
-      if (attempt < 5) {
-        await sleep(2000 * 2 ** attempt);
-        continue;
-      }
-      throw err;
+      const reason = (err as Error).name === "TimeoutError" ? `no answer within ${REQUEST_TIMEOUT_MS / 1000}s` : `network error (${(err as Error).message})`;
+      await retry(attempt, reason);
+      continue;
     }
     const latencyMs = performance.now() - start;
     if (res.status === 429) {
@@ -162,10 +178,8 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
       if (rpm > 2) rpm = Math.max(2, Math.floor(rpm * 0.7));
     }
     if (res.status === 429 || res.status >= 500) {
-      if (attempt < 6) {
-        await sleep(Math.min(60_000, 2000 * 2 ** attempt));
-        continue;
-      }
+      await retry(attempt, `HTTP ${res.status}`);
+      continue;
     }
     const json = (await res.json()) as InteractionResponse;
     if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${JSON.stringify(json).slice(0, 500)}`);
