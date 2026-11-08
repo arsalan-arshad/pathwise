@@ -31,8 +31,11 @@
   "scripts": {
     "build": "tsc",
     "demo": "tsx examples/demo.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts",
-    "bench:sla": "tsx examples/sla-bench.ts"
+    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts bench/real-rag/run.ts bench/real-rag/pilot.ts",
+    "bench:sla": "tsx examples/sla-bench.ts",
+    "bench:rag:smoke": "tsx bench/real-rag/pilot.ts --smoke",
+    "bench:rag:pilot": "tsx bench/real-rag/pilot.ts",
+    "bench:rag": "tsx bench/real-rag/run.ts"
   },
   "license": "MIT",
   "engines": {

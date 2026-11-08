@@ -4,3 +4,6 @@ dist
 *.log
 .env
 CLAUDE.md
+bench/real-rag/data/
+bench/real-rag/cache/
+bench/real-rag/results/mock-*
