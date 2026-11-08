@@ -7,7 +7,7 @@
  *
  * Pilot calls are cached and reused by the main run (same questions, same prompts).
  */
-import { MODELS, SPACE, BUDGET_USD, type Tier } from "./config.js";
+import { BASELINES, MODELS, SPACE, TIERS, BUDGET_USD } from "./config.js";
 import { loadHotpot, sample } from "./dataset.js";
 import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, stopAll, rawSmokeCall, setRpm, spendSoFar } from "./gemini.js";
 import { percentile, pool, ragPipeline, scorer } from "./pipeline.js";
@@ -20,7 +20,7 @@ const arg = (name: string, def: number) => {
 };
 
 if (args.includes("--smoke")) {
-  for (const tier of Object.keys(MODELS) as Tier[]) {
+  for (const tier of TIERS) {
     const r = await rawSmokeCall(tier, "low", "Reply with exactly one word: ok");
     console.log(`\n=== ${MODELS[tier]} ===\n${JSON.stringify(r, null, 2).slice(0, 3000)}`);
   }
@@ -88,8 +88,8 @@ if (rows.length === plans.length) {
   }
   calibPerQ /= questions.length;
   callsPerQ /= questions.length;
-  const maxRow = rows.find((r) => r.key === planKey({ model: "large", topK: 10, thinking: "high" }))!;
-  const typRow = rows.find((r) => r.key === planKey({ model: "large", topK: 5, thinking: "low" }))!;
+  const maxRow = rows.find((r) => r.key === planKey(BASELINES.max))!;
+  const typRow = rows.find((r) => r.key === planKey(BASELINES.typical))!;
   const cheapest = rows[0];
   const planner = (cheapest.cost + best.cost) / 2; // rough upper guess until the real run
   const proj =
