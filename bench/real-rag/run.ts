@@ -108,13 +108,33 @@ async function runFixed(name: string, plan: Plan): Promise<StrategyResult> {
 }
 
 let stopped: string | undefined;
+/** Strategies blocked by a daily quota or an overloaded model this time; the next run finishes them. */
+const unfinished: string[] = [];
+let quotaNote: string | undefined;
+
+/** Runs one strategy. A daily quota or unavailable model skips it (others may use other models). */
+async function attempt(name: string, run: () => Promise<StrategyResult>) {
+  try {
+    results.push(await run());
+  } catch (err) {
+    if (err instanceof DailyQuotaError || err instanceof ModelUnavailableError) {
+      unfinished.push(name);
+      quotaNote ??= err.message;
+      console.error(`\n[${name}] not finished: ${err.message.split("\n")[0]}`);
+      return;
+    }
+    throw err;
+  }
+}
+
 try {
   // Cheapest first, so a budget stop still leaves the most useful results.
-  results.push(await runFixed("Always cheap", { ...BASELINES.cheap }));
-  results.push(await runPlanner("Pathwise (average-based)", undefined));
-  results.push(await runPlanner(`Pathwise (guaranteed, confidence ${CONFIDENCE})`, CONFIDENCE));
-  results.push(await runFixed("Typical default", { ...BASELINES.typical }));
-  results.push(await runFixed("Always max", { ...BASELINES.max }));
+  await attempt("Always cheap", () => runFixed("Always cheap", { ...BASELINES.cheap }));
+  await attempt("Pathwise (average-based)", () => runPlanner("Pathwise (average-based)", undefined));
+  const guaranteed = `Pathwise (guaranteed, confidence ${CONFIDENCE})`;
+  await attempt(guaranteed, () => runPlanner(guaranteed, CONFIDENCE));
+  await attempt("Typical default", () => runFixed("Typical default", { ...BASELINES.typical }));
+  await attempt("Always max", () => runFixed("Always max", { ...BASELINES.max }));
 } catch (err) {
   stopAll();
   if (!(err instanceof BudgetExceeded || err instanceof QuotaError || err instanceof DailyQuotaError || err instanceof ModelUnavailableError)) throw err;
@@ -157,6 +177,12 @@ const lines = [
     ? `- List-price equivalent of all API calls so far (each counted once): ${usd(spend.spentUsd)}; billed $0 (free tier).`
     : `- Real API spend so far (all runs, cache included once): ${usd(spend.spentUsd)} of ${usd(BUDGET_USD)}.`,
   ...(stopped ? [`- **Stopped early:** ${stopped}`] : []),
+  ...(unfinished.length > 0
+    ? [
+        `- **Not finished yet:** ${unfinished.join("; ")}. Run the same command again after the quota resets;`,
+        `  finished calls are cached.${quotaNote ? ` ${quotaNote.split("\n").slice(1).join(" ").trim()}` : ""}`,
+      ]
+    : []),
 ];
 await mkdir(PATHS.results, { recursive: true });
 const base = new URL(`${spend.mock ? "mock-" : ""}run-${stamp}`, PATHS.results);
