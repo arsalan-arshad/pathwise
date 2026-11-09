@@ -30,6 +30,8 @@ export class ModelUnavailableError extends Error {}
 
 /** Set once a run hits a fatal error, so calls still in flight stop instead of retrying in the background. */
 let stopping = false;
+/** Models whose daily quota ran out during this run, with the message to repeat. */
+const exhausted = new Map<string, string>();
 export function stopAll() {
   stopping = true;
 }
@@ -106,6 +108,9 @@ export async function generate(tier: Tier, thinking: "low" | "high", prompt: str
   const key = createHash("sha256").update(`${model}\n${thinking}\n${prompt}`).digest("hex");
   const hit = cache!.get(key);
   if (hit) return { ...hit, cached: true };
+  // This model's daily quota already ran out in this run: fail fast so other strategies can go on.
+  const exhaustedMsg = exhausted.get(model);
+  if (exhaustedMsg) throw new DailyQuotaError(exhaustedMsg);
 
   // Refuse a call whose worst case could cross the budget (parallel calls reserve their worst case).
   const price = priceFor(tier);
@@ -179,11 +184,12 @@ async function liveCall(model: string, tier: Tier, thinking: string, prompt: str
       }
       // Daily quota used up: stop cleanly; the cache lets the next run continue where this one stopped.
       if (/per\s*day|perday|daily/i.test(text)) {
-        throw new DailyQuotaError(
-          `Daily free-tier quota for ${model} is used up. Run the same command again tomorrow: ` +
-            "everything finished so far is cached and will not be re-requested.\n" +
-            `  Google said: ${quotaMessage(text)}`,
-        );
+        const msg =
+          `Daily free-tier quota for ${model} is used up. Run the same command again after it resets: ` +
+          "everything finished so far is cached and will not be re-requested.\n" +
+          `  Google said: ${quotaMessage(text)}`;
+        exhausted.set(model, msg);
+        throw new DailyQuotaError(msg);
       }
       // Per-minute limit: slow down for the rest of this run.
       if (rpm > 2) rpm = Math.max(2, Math.floor(rpm * 0.7));
