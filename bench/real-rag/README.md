@@ -31,8 +31,12 @@ export GEMINI_API_KEY=...            # free key from Google AI Studio; never com
 
 npm run bench:rag:smoke              # 3 tiny calls: checks the key, model ids and usage fields
 npm run bench:rag:pilot              # 12 plans x 20 questions (240 calls, ~25 min at 10/min): suggests --sla
-npm run bench:rag -- --sla 0.XX      # main run: 100 calibration + 200 test questions
+npm run bench:rag -- --sla-of-max 0.95   # main run: 100 calibration + 200 test questions
 ```
+
+`--sla-of-max 0.95` sets the SLA to 95% of the "always max" plan's mean F1 on the calibration questions
+(never the test set): "at least 95% of my most expensive setting's quality". A fixed `--sla 0.8` also works,
+but a bar picked from a small pilot can be unreachable on the full set (that happened on our first run).
 
 Check your free-tier limits at https://aistudio.google.com/rate-limit and pass `--rpm` to match.
 Options: `--calibration N`, `--test N`, `--confidence 0.9`, `--concurrency 2`, `--rpm 10`.
