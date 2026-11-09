@@ -1,7 +1,11 @@
 /**
  * Step 3: the main real-RAG benchmark.
  *
- *   npm run bench:rag -- --sla 0.7 [--calibration 100] [--test 200] [--confidence 0.9] [--concurrency 2] [--rpm 10]
+ *   npm run bench:rag -- --sla-of-max 0.95 [--calibration 100] [--test 200] [--confidence 0.9] [--concurrency 2] [--rpm 10]
+ *   npm run bench:rag -- --sla 0.7 ...        (fixed SLA instead)
+ *
+ * --sla-of-max 0.95 sets the SLA to 95% of the "always max" plan's mean F1 on the calibration questions
+ * (never the test questions), i.e. "at least 95% of my most expensive setting's quality".
  *
  * Calibrates Pathwise on the calibration questions, then answers the test questions with:
  *   - Pathwise, average-based decisions (v0.1 behaviour)
@@ -22,11 +26,13 @@ const arg = (name: string, def?: number) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? Number(args[i + 1]) : def;
 };
-const SLA = arg("sla");
-if (SLA === undefined || Number.isNaN(SLA)) {
-  console.error("Pass --sla (run the pilot first; it suggests one).");
+const SLA_OF_MAX = arg("sla-of-max");
+let SLA = arg("sla");
+if ((SLA === undefined || Number.isNaN(SLA)) && (SLA_OF_MAX === undefined || Number.isNaN(SLA_OF_MAX))) {
+  console.error("Pass --sla-of-max 0.95 (recommended) or a fixed --sla.");
   process.exit(1);
 }
+let slaNote = "";
 const CALIBRATION = arg("calibration", 100)!;
 const TEST = arg("test", 200)!;
 const CONFIDENCE = arg("confidence", 0.9)!;
@@ -36,6 +42,24 @@ setRpm(arg("rpm", 0)!);
 const all = await loadHotpot();
 const { calibration, test } = sample(all, CALIBRATION, TEST);
 const featurize = hashedTextFeaturizer();
+
+if (SLA_OF_MAX !== undefined && !Number.isNaN(SLA_OF_MAX)) {
+  // Relative SLA, measured on calibration questions only so the test set stays unseen.
+  console.log(`\n[SLA] measuring always-max (${planKey(BASELINES.max)}) on the ${calibration.length} calibration questions ...`);
+  try {
+    const f1s = await pool(calibration, CONCURRENCY, async (q) => scorer(q, (await ragPipeline(q, { ...BASELINES.max })).output));
+    const maxF1 = f1s.reduce((a, b) => a + b, 0) / f1s.length;
+    SLA = Math.floor(SLA_OF_MAX * maxF1 * 1000) / 1000;
+    slaNote = ` (${Math.round(SLA_OF_MAX * 100)}% of always-max's mean F1 ${maxF1.toFixed(3)} on the calibration questions)`;
+    console.log(`[SLA] always-max F1 on calibration = ${maxF1.toFixed(3)} -> SLA = ${SLA}`);
+  } catch (err) {
+    if (err instanceof DailyQuotaError || err instanceof ModelUnavailableError) {
+      console.error(`\nCould not measure the SLA yet: ${err.message}`);
+      process.exit(0);
+    }
+    throw err;
+  }
+}
 
 interface StrategyResult {
   name: string;
@@ -154,7 +178,7 @@ const lines = [
   `# Real-RAG benchmark: ${new Date().toISOString().slice(0, 10)}`,
   "",
   `Real Gemini API calls on HotpotQA dev (distractor), ${calibration.length} calibration + ${test.length} test questions.`,
-  `Models: ${TIERS.map((t) => MODELS[t]).join(", ")}. SLA: mean F1 >= ${SLA}.${spend.mock ? " **MOCK MODE: fake model, not real results.**" : ""}`,
+  `Models: ${TIERS.map((t) => MODELS[t]).join(", ")}. SLA: mean F1 >= ${SLA}${slaNote}.${spend.mock ? " **MOCK MODE: fake model, not real results.**" : ""}`,
   ...(spend.modelSet === "free" && !spend.mock
     ? ["Run on the Gemini free tier (billed $0). All costs below are what the same calls cost at paid-tier list prices."]
     : []),
