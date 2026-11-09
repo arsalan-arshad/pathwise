@@ -35,11 +35,17 @@ export const scorer = (q: Question, out: Answer) => f1(out.answer, q.answer);
 export async function pool<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
   let next = 0;
+  let failed = false; // after the first error, workers stop taking new items
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) {
+      while (!failed && next < items.length) {
         const i = next++;
-        out[i] = await fn(items[i], i);
+        try {
+          out[i] = await fn(items[i], i);
+        } catch (err) {
+          failed = true;
+          throw err;
+        }
       }
     }),
   );
