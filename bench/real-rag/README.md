@@ -43,6 +43,10 @@ Options: `--calibration N`, `--test N`, `--confidence 0.9`, `--concurrency 2`, `
 Offline dry run with a fake model (no key, no calls): prefix any command with `PATHWISE_BENCH_MOCK=1`.
 Results land in `results/` as Markdown and JSON.
 
+Replay a calibration from the cache without any API call (it stops at the first response that was never cached):
+`npm run bench:rag:replay -- --sla 0.725`. It prints what calibration learned per plan and why plans were pruned.
+`PATHWISE_BENCH_OFFLINE=1` makes any command cache-only.
+
 Free-tier note: Google's terms for unpaid API use may allow it to use prompts to improve its products. This
 benchmark only sends public HotpotQA text; do not send private data on a free key.
 
