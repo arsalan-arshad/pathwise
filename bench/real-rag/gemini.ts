@@ -25,6 +25,8 @@ export class BudgetExceeded extends Error {}
 export class QuotaError extends Error {}
 /** The daily request quota is used up. Re-run tomorrow: finished calls are cached. */
 export class DailyQuotaError extends Error {}
+/** Offline replay (PATHWISE_BENCH_OFFLINE=1) needed a response that is not in the cache. */
+export class OfflineMiss extends Error {}
 /** A model kept timing out or returning server errors. Re-run later: finished calls are cached. */
 export class ModelUnavailableError extends Error {}
 
@@ -42,6 +44,9 @@ const REQUEST_TIMEOUT_MS = Number(process.env.PATHWISE_BENCH_TIMEOUT_MS ?? 90_00
 const MAX_ATTEMPTS = 8;
 
 const MOCK = process.env.PATHWISE_BENCH_MOCK === "1";
+/** Replay from the cache only: never calls the API, never writes. A missing response throws OfflineMiss. */
+const OFFLINE = process.env.PATHWISE_BENCH_OFFLINE === "1";
+export const offlineMisses = new Set<string>();
 const CACHE_DIR = new URL(MOCK ? "mock/" : `live-${MODEL_SET}/`, PATHS.cache);
 const CACHE_FILE = new URL("responses.jsonl", CACHE_DIR);
 const LEDGER_FILE = new URL("spend.jsonl", CACHE_DIR);
@@ -108,6 +113,10 @@ export async function generate(tier: Tier, thinking: "low" | "high", prompt: str
   const key = createHash("sha256").update(`${model}\n${thinking}\n${prompt}`).digest("hex");
   const hit = cache!.get(key);
   if (hit) return { ...hit, cached: true };
+  if (OFFLINE) {
+    offlineMisses.add(key);
+    throw new OfflineMiss(`not in the cache: ${model} ${thinking} (${prompt.length} chars)`);
+  }
   // This model's daily quota already ran out in this run: fail fast so other strategies can go on.
   const exhaustedMsg = exhausted.get(model);
   if (exhaustedMsg) throw new DailyQuotaError(exhaustedMsg);

@@ -26,7 +26,7 @@ export interface CalibrationOptions {
   seedQueries?: number;
   /** A plan "wins" a query when its score reaches this. Default: sla.minQuality. */
   stopQuality?: number;
-  /** Shared queries needed before a plan can be pruned as dominated. Default 8. */
+  /** Shared queries, where at least one of the two plans cleared stopQuality, needed before a plan can be pruned as dominated. Default 8. */
   minDominanceEvidence?: number;
   /** Similarity at which calibrated neighbours are trusted to predict a query's winner. Default 0.9 (>1 disables). */
   shortcutSimilarity?: number;
@@ -488,11 +488,13 @@ export class Planner<I, O> {
     this.profiles = new Map([...sums].map(([k, s]) => [k, { costUsd: s.c / s.n, latencyMs: s.l / s.n }]));
 
     // A is dominated by B if B is cheaper (and no slower, when latency is constrained) and
-    // B scored >= A on every query where both ran, with enough such queries.
+    // B scored >= A on every query where both ran, with enough such queries where either plan
+    // cleared stopQuality.
     const shared = this.records
       .filter((r) => r.observations.length > 1)
       .map((r) => qualityMap(r));
     const useLatency = this.opts.sla.maxLatencyMs !== undefined;
+    const stop = this.calib.stopQuality;
     const dominated = new Set<string>();
     const keys = [...this.planByKey.keys()];
     for (const a of keys) {
@@ -509,11 +511,13 @@ export class Planner<I, O> {
           const qa = m.get(a);
           const qb = m.get(b);
           if (qa === undefined || qb === undefined) continue;
-          n++;
           if (qb < qa) {
             neverWorse = false;
             break;
           }
+          // A query that both plans fail says nothing about which is better, so it is no evidence.
+          // Counting it pruned the best plans on real data: hard queries tie at 0 and come first.
+          if (qa >= stop || qb >= stop) n++;
         }
         if (neverWorse && n >= this.calib.minDominanceEvidence) {
           dominated.add(a);
