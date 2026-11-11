@@ -69,6 +69,35 @@ The guarantee costs money when evidence is thin and gets cheaper with more calib
 Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 runs;
 the average-based mode missed 45. Real pipelines will differ.
 
+## First result on real data
+
+Everything above is simulated. This is one run on a real pipeline (`npm run bench:rag`, details in
+[`bench/real-rag`](bench/real-rag/README.md)): HotpotQA dev (distractor), BM25 retrieval, token-F1 scoring against
+gold answers, two Gemini models (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`) x top-k {2, 5, 10} x thinking {low, high} = 12 plans.
+100 calibration questions, 200 test questions. SLA: at least 95% of always-max's F1 on the calibration questions (0.725).
+Run on the free tier; costs are what the same calls cost at paid list prices.
+
+| Strategy | Mean F1 | SLA 0.725 met | $/query |
+|---|---|---|---|
+| Always cheap (small, top-k 2, low) | 0.542 | no | $0.00025 |
+| Typical default (medium, top-k 5, low) | 0.685 | no | $0.00044 |
+| **Pathwise, average-based** | 0.707 | no (1.8 points short) | $0.00066 |
+| **Pathwise, guaranteed (confidence 0.9)** | 0.789 | yes | $0.00164 |
+| Always max (medium, top-k 10, high) | 0.789 | yes | $0.00164 |
+
+What this shows, and what it does not:
+
+- Average-based Pathwise was **60% cheaper than always-max** and kept 90% of its test F1 (0.707 vs 0.789). It missed the SLA, as the average-based mode can.
+- The guaranteed mode **did not certify** the SLA and fell back to the safe plan, which here is always-max: SLA met, **no savings**. That is correct, not a failure: with 100 questions even always-max cannot prove 95% of its own score
+  (its 90% lower bound is 0.706 < 0.725), so no cheaper plan can. A looser target or a few hundred more calibration questions is what it takes.
+  The guarantee is about not missing; it costs savings when evidence is thin, as in the simulation above.
+- On this data a pricier plan often did *not* beat a cheaper one: 46% of the pricier plans measured on a question that a cheaper plan already answered still failed it.
+  Pathwise detected that and measured more instead of assuming pricier means better.
+- **Not shown:** that routing beats the best single fixed plan. Only part of the 12-plan table was measured, so a well-chosen fixed plan may match it.
+- One dataset, one provider, one run, 100 calibration questions. HotpotQA may be in the models' training data. Free-tier latency was erratic, so latency numbers are not reported here.
+- The first run of this benchmark exposed a real bug: calibration pruned the best plans on queries every plan fails, and the guaranteed mode then scored 0.669 at $0.00144/q (worse and dearer than a plain default). Fixed in [#13](https://github.com/arsalan-arshad/pathwise/pull/13);
+  both runs are kept in [`bench/real-rag/results`](bench/real-rag/results) (`run-2026-11-10T21-22-40-111Z.md` before, `run-2026-11-11T22-16-57-266Z.md` after).
+
 ## Demo
 
 ```bash
@@ -93,7 +122,7 @@ The workload is synthetic; real savings depend on how varied your traffic is.
 - [ ] Real embeddings featurizer (OpenAI / Voyage / local) instead of hashed text features
 - [ ] Adapters for Vercel AI SDK, LangChain.js, LlamaIndex.TS
 - [ ] Persistent store (SQLite / Postgres) for learned data
-- [ ] Confidence bounds on predicted quality (guarantee the SLA, not just the average)
+- [x] Confidence bounds on predicted quality (guarantee the SLA, not just the average)
 - [ ] Hosted dashboard: dollars saved, SLA met, plan mix over time
 
 ## Author
