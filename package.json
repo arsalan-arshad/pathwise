@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc",
     "demo": "tsx examples/demo.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts examples/prune-bench.ts examples/vercel-ai.ts examples/fallback-bench.ts bench/real-rag/run.ts bench/real-rag/pilot.ts bench/real-rag/replay.ts bench/real-rag/table.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts examples/prune-bench.ts examples/vercel-ai.ts examples/embeddings.ts examples/fallback-bench.ts bench/real-rag/run.ts bench/real-rag/pilot.ts bench/real-rag/replay.ts bench/real-rag/table.ts",
     "bench:sla": "tsx examples/sla-bench.ts",
     "bench:prune": "tsx examples/prune-bench.ts",
     "bench:fallback": "tsx examples/fallback-bench.ts",
@@ -40,7 +40,8 @@
     "bench:rag": "tsx bench/real-rag/run.ts",
     "bench:rag:replay": "tsx bench/real-rag/replay.ts",
     "bench:rag:table": "tsx bench/real-rag/table.ts",
-    "bench:adapter": "tsx examples/vercel-ai.ts"
+    "bench:adapter": "tsx examples/vercel-ai.ts",
+    "bench:embeddings": "tsx examples/embeddings.ts"
   },
   "license": "MIT",
   "engines": {
@@ -61,6 +62,10 @@
     "./vercel-ai": {
       "types": "./dist/adapters/vercel-ai.d.ts",
       "default": "./dist/adapters/vercel-ai.js"
+    },
+    "./embeddings": {
+      "types": "./dist/adapters/embeddings.d.ts",
+      "default": "./dist/adapters/embeddings.js"
     }
   }
 }
