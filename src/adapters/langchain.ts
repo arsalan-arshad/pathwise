@@ -11,6 +11,8 @@
  *     prepare: (q, plan) => ({ input: buildPrompt(q, plan.topK as number) }),
  *   });
  *   const planner = createPlanner({ space, pipeline, scorer, sla });
+ *
+ * Smoke-tested on Nov 13, 2026 against `ai` 7.0.171 and `@langchain/core` 1.4.0 using their own mock/fake models (no live provider calls).
  */
 import type { Pipeline, Plan } from "../types.js";
 import type { ModelPrice } from "./vercel-ai.js";
