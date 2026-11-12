@@ -78,7 +78,8 @@
     "./openai-compatible": {
       "types": "./dist/adapters/openai-compatible.d.ts",
       "default": "./dist/adapters/openai-compatible.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": false,
   "files": [
