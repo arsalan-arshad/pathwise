@@ -24,7 +24,18 @@ const models = {
   large: { model: "large", price: { inputPerMTok: 2, outputPerMTok: 10 } },
 };
 
+function checkUsageCost() {
+  const price = { inputPerMTok: 1, outputPerMTok: 10 };
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-12;
+  // v7 shape: outputTokens already includes reasoning, so reasoning must not be added again.
+  if (!near(usageCostUsd({ inputTokens: 1000, outputTokens: 500, outputTokenDetails: { reasoningTokens: 300 } }, price), 0.006)) throw new Error("v7 usage cost");
+  // Flat legacy shape: reasoning reported separately.
+  if (!near(usageCostUsd({ promptTokens: 1000, completionTokens: 500, reasoningTokens: 300 }, price), 0.009)) throw new Error("flat usage cost");
+  if (usageCostUsd(undefined, price) !== 0) throw new Error("missing usage");
+}
+
 async function main() {
+  checkUsageCost();
   const { makeQueries } = createWorkload(42);
   const feats = hashedTextFeaturizer();
   const pipeline = vercelAIPipeline<Query>({

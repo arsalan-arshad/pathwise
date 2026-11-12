@@ -83,7 +83,8 @@ export function usageCostUsd(usage: AIUsage | undefined, price: ModelPrice): num
   const output = usage?.outputTokens ?? usage?.completionTokens ?? 0;
   const reasoning = usage?.outputTokenDetails?.reasoningTokens ?? usage?.reasoningTokens ?? 0;
   // v7: outputTokens already includes reasoning tokens (textTokens + reasoningTokens).
-  // Flat legacy shapes report them separately, so only add them when outputTokenDetails is absent.
+  // Assumption (unverified for every provider): a flat legacy shape reports them separately, so add them
+  // only when outputTokenDetails is absent. If a provider already includes them, this overcounts (safe side).
   const billedOutput = usage?.outputTokenDetails ? output : output + reasoning;
   return (input * price.inputPerMTok + billedOutput * price.outputPerMTok) / 1e6;
 }

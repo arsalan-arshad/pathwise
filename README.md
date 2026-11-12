@@ -102,10 +102,11 @@ What this shows, and what it does not:
 
 ```ts
 import { generateText } from "ai";
+import { createPlanner } from "pathwise";
 import { vercelAIPipeline } from "pathwise/vercel-ai";
 
 const pipeline = vercelAIPipeline({ generateText, models, prepare: (q, plan) => ({ prompt: buildPrompt(q, plan.topK) }) });
-const planner = createPlanner({ space, pipeline, scorer, sla });
+const planner = createPlanner({ space, pipeline, scorer, sla }); // space, scorer, sla: yours
 ```
 
 `models` maps the names in your `model` knob to `{ model, price }` (USD per 1M tokens); cost is computed from the real `usage`
