@@ -1,5 +1,5 @@
 {
-  "name": "pathwise",
+  "name": "@arsalan-arshad/pathwise",
   "version": "0.1.0",
   "description": "A query planner for RAG and agent pipelines: meet your quality SLA at the lowest cost.",
   "keywords": [
@@ -44,7 +44,8 @@
     "bench:embeddings": "tsx examples/embeddings.ts",
     "bench:langchain": "tsx examples/langchain.ts",
     "bench:openai-compatible": "tsx examples/openai-compatible.ts",
-    "smoke:real-packages": "bash bench/real-packages/run.sh"
+    "smoke:real-packages": "bash bench/real-packages/run.sh",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "license": "MIT",
   "engines": {
@@ -77,6 +78,16 @@
     "./openai-compatible": {
       "types": "./dist/adapters/openai-compatible.d.ts",
       "default": "./dist/adapters/openai-compatible.js"
-    }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
