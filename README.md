@@ -127,6 +127,29 @@ of each call. The adapter never imports `ai` (zero dependencies in core); it tar
 to return `{ text, usage }`. Runnable without a key: `npm run bench:adapter` (fake model, synthetic). Measured on that
 fake: adapter overhead about 0.0002 ms per call, `decide()` about 0.07 ms.
 
+## LangChain.js
+
+```ts
+import { langchainPipeline } from "pathwise/langchain";
+
+const pipeline = langchainPipeline({
+  model: (plan) => new ChatOpenAI({ model: plan.model as string, reasoning: { effort: plan.thinking as string } }),
+  price: (plan) => PRICES[plan.model as string],   // USD per 1M tokens
+  prepare: (q, plan) => ({ input: buildPrompt(q, plan.topK as number) }),
+});
+const planner = createPlanner({ space, pipeline, scorer, sla });
+```
+
+You build the chat model for each plan (LangChain sets thinking, max tokens and temperature on the model, with provider-specific names), so the
+adapter guesses nothing. Cost comes from the message's `usage_metadata` (`output_tokens` already includes reasoning tokens); if a model reports no
+usage the call fails with a clear error, or pass `cost: (usage, plan) => usd` instead of `price`. It never imports `@langchain/core` (zero
+dependencies in core) and targets `@langchain/core` 1.x (npm latest 1.4.0 on Nov 13, 2026).
+
+**What was tested: a fake chat model only** (`npm run bench:langchain`, synthetic). **Not tested against the real `@langchain/core` package**
+(the real-package smoke test could not run: the sandbox blocked executing the installed package). The structural types are modelled on the
+documented `invoke` / `AIMessage` / `usage_metadata` shapes, so verify with your own model before relying on it. Synthetic: adapter overhead about
+0.0002 ms per call, `decide()` about 0.07 ms.
+
 ## Demo
 
 ```bash
