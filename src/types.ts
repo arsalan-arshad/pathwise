@@ -46,6 +46,8 @@ export interface SLA {
   /**
    * Only with confidence and onUncertified "safe": the plan you trust today (usually what you ran before
    * Pathwise). Every request gets exactly this plan while the SLA cannot be certified. Must be in the knob space.
+   * Safe mode ignores maxCostUsd and maxLatencyMs, and the estimate for a plan calibration never measured is
+   * weak: pick a plan your calibration sample actually ran.
    */
   fallbackPlan?: Plan;
   maxLatencyMs?: number;

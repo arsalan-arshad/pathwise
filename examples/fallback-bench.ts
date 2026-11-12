@@ -50,6 +50,17 @@ for (let seed = 1; seed <= SEEDS; seed++) {
   console.log(`seed ${seed}: uncertified -> fallback ${planKey(fallbackPlan)}: accuracy ${(ok / prod.length * 100).toFixed(1)}% = ${(refOk / prod.length * 100).toFixed(1)}%, cost $${cost.toFixed(2)} = $${refCost.toFixed(2)} (synthetic)`);
 }
 
+// Certified case: policy is "routing" and there is no fixedPlan.
+{
+  const { makeQueries } = createWorkload(1);
+  const planner = createPlanner<{ text: string; difficulty: number }, { correct: boolean }>({
+    space: SPACE, pipeline: ragPipeline, scorer: (_q, o) => (o.correct ? 1 : 0),
+    sla: { minQuality: 0.7, confidence: 0.9, fallbackPlan }, featurize: (q) => feats(q.text), feedbackRate: 0,
+  });
+  const r = await planner.calibrate(makeQueries(300));
+  check(r.slaCertified && r.policy === "routing" && r.fixedPlan === undefined, `certified case: ${r.slaCertified} ${r.policy} ${r.fixedPlan}`);
+}
+
 // Validation.
 const bad = (sla: object) => { try { createPlanner({ space: SPACE, pipeline: ragPipeline, scorer: () => 1, sla: sla as never }); return false; } catch { return true; } };
 check(bad({ minQuality: 0.9, confidence: 0.9, fallbackPlan: { model: "huge", topK: 5, rerank: false } }), "plan outside the space must throw");

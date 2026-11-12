@@ -63,7 +63,8 @@ sla: { minQuality: 0.95, confidence: 0.9, fallbackPlan: { model: "large", topK: 
 // report.policy === "safe-plan" and report.fixedPlan === that plan's key while slaCertified is false
 ```
 
-It must be a plan in your knob space and needs `confidence` and `onUncertified: "safe"` (the default); anything else throws.
+It must be a plan in your knob space and needs `confidence` and `onUncertified: "safe"` (the default); anything else throws. While it runs, `maxCostUsd` and `maxLatencyMs` are not enforced, and its estimate is weak if calibration
+never measured it (adaptive calibration may skip pricey plans), so pick a plan you expect calibration to run.
 Synthetic check (`npm run bench:fallback`, 5 workloads, 30 samples, 99% bar): every uncertified request ran the fallback,
 so accuracy and cost equal running that plan directly (e.g. 79.0% at $1.20 per 300 queries, both ways). No extra runs.
 
