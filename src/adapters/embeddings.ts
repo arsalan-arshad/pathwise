@@ -16,8 +16,6 @@
  * Voyage: docs.voyageai.com/reference/embeddings-api). Prices then: OpenAI text-embedding-3-small $0.02 / 1M tokens,
  * Voyage voyage-4-lite $0.02 / 1M tokens (200M free tokens). Local OpenAI-compatible servers (Ollama, LM Studio) cost $0.
  */
-import { hashedTextFeaturizer } from "../features.js";
-
 /** Embeds a batch of texts. Vectors must come back in input order. `tokens` is what the provider billed, if reported. */
 export type EmbedFn = (texts: string[]) => Promise<{ vectors: number[][]; tokens?: number }>;
 
@@ -44,8 +42,14 @@ async function postEmbeddings(url: string, opts: HttpOptions, body: object, who:
   const json = await res.json();
   const data = json?.data;
   if (!Array.isArray(data)) throw new Error(`${who}: response has no data[]`);
+  // Both APIs tag each vector with its input position (`index`); some local servers omit it, so fall back to order.
   const vectors: number[][] = [];
-  for (const d of data) vectors[d.index] = d.embedding; // the API tags each vector with its input position
+  data.forEach((d: any, i: number) => {
+    vectors[Number.isInteger(d.index) ? d.index : i] = d.embedding;
+  });
+  if (data.length !== (body as { input: unknown[] }).input.length) {
+    throw new Error(`${who}: sent ${(body as { input: unknown[] }).input.length} inputs, got ${data.length} vectors`);
+  }
   return { vectors, tokens: (json.usage?.total_tokens ?? json.usage?.prompt_tokens) as number | undefined };
 }
 
@@ -87,12 +91,16 @@ export interface EmbeddingFeaturizerOptions<I> {
   embed: EmbedFn;
   /** Text to embed for an input. Default: the input itself if it is a string, else JSON. */
   text?: (input: I) => string;
-  /** Texts per `embed` call. Default 128 (OpenAI allows 2048 inputs, Voyage 1000). */
+  /**
+   * Texts per `embed` call. Default 128. Providers also cap tokens per request (OpenAI 300,000 across inputs and
+   * 8,192 per input; Voyage per model), so lower this for long texts. No retry, backoff or timeout: a 429 rejects warm().
+   */
   batchSize?: number;
-  /** Expected vector length; a mismatch throws. Default: taken from the first vector. */
+  /**
+   * Expected vector length; a mismatch throws. Default: taken from the first valid vector. This only validates: it is
+   * NOT sent to the provider (use `dimensions` in openAIEmbed or `outputDimension` in voyageEmbed for that).
+   */
   dimension?: number;
-  /** A text that was never warmed: "throw" (default, a clear error) or "hashed" (hashed bag-of-words, a different vector space!). */
-  onMiss?: "throw" | "hashed";
 }
 
 export interface EmbeddingStats {
@@ -121,7 +129,6 @@ export function embeddingFeaturizer<I = string>(options: EmbeddingFeaturizerOpti
   const cache = new Map<string, number[]>();
   const stats: EmbeddingStats = { calls: 0, texts: 0, tokens: 0, cacheHits: 0, misses: 0 };
   let dim = options.dimension;
-  const hashed = options.onMiss === "hashed" ? hashedTextFeaturizer() : undefined;
 
   const unit = (v: number[]) => {
     const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
@@ -136,27 +143,38 @@ export function embeddingFeaturizer<I = string>(options: EmbeddingFeaturizerOpti
       return hit;
     }
     stats.misses++;
-    if (hashed) return hashed(t);
     throw new Error("embeddingFeaturizer: text was not embedded yet; call `await featurizer.warm([input])` first");
   }) as EmbeddingFeaturizer<I>;
 
+  const inflight = new Map<string, Promise<void>>();
   fn.warm = async (inputs: I[]) => {
-    const todo = [...new Set(inputs.map(textOf))].filter((t) => !cache.has(t));
+    const todo = [...new Set(inputs.map(textOf))].filter((t) => !cache.has(t) && !inflight.has(t));
+    const waiting = [...new Set(inputs.map(textOf))].filter((t) => inflight.has(t)).map((t) => inflight.get(t)!);
+    const mine: Promise<void>[] = [];
     for (let i = 0; i < todo.length; i += batchSize) {
       const batch = todo.slice(i, i + batchSize);
-      const { vectors, tokens } = await options.embed(batch);
-      stats.calls++;
-      stats.texts += batch.length;
-      stats.tokens += tokens ?? 0;
-      for (let j = 0; j < batch.length; j++) {
-        const v = vectors[j];
-        if (!Array.isArray(v) || v.length === 0) throw new Error(`embeddingFeaturizer: no vector returned for input ${i + j}`);
-        dim ??= v.length;
-        if (v.length !== dim) throw new Error(`embeddingFeaturizer: expected ${dim} dimensions, got ${v.length}`);
-        cache.set(batch[j], unit(v));
-      }
+      const p = (async () => {
+        const { vectors, tokens } = await options.embed(batch);
+        stats.calls++;
+        stats.texts += batch.length;
+        stats.tokens += tokens ?? 0; // billed even if validation below fails
+        const checked = batch.map((_, j) => {
+          const v = vectors[j];
+          if (!Array.isArray(v) || v.length === 0 || v.some((x) => typeof x !== "number" || !Number.isFinite(x))) {
+            throw new Error(`embeddingFeaturizer: invalid vector for text ${j} of the batch`);
+          }
+          if (dim !== undefined && v.length !== dim) throw new Error(`embeddingFeaturizer: expected ${dim} dimensions, got ${v.length}`);
+          return v;
+        });
+        dim ??= checked[0].length;
+        if (checked.some((v) => v.length !== dim)) throw new Error(`embeddingFeaturizer: vectors in a batch have different dimensions (expected ${dim})`);
+        batch.forEach((t, j) => cache.set(t, unit(checked[j])));
+      })().finally(() => batch.forEach((t) => inflight.delete(t)));
+      batch.forEach((t) => inflight.set(t, p));
+      mine.push(p);
     }
+    await Promise.all([...mine, ...waiting]);
   };
-  Object.defineProperty(fn, "stats", { get: () => stats });
+  Object.defineProperty(fn, "stats", { get: () => ({ ...stats }) }); // a snapshot
   return fn;
 }

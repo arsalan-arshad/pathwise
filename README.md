@@ -138,9 +138,11 @@ const planner = createPlanner({ /* ... */ featurize });   // await featurize.war
 ```
 
 `featurize` stays synchronous (so `decide()` stays fast): embeddings are fetched ahead of time with `warm()` and read from a cache.
-A text you did not warm throws a clear error (or `onMiss: "hashed"` falls back to hashed features, a different vector space).
+A text you did not warm throws a clear error. Concurrent `warm()` calls for the same text embed it once.
+Limits: no retry, backoff or timeout (a 429 rejects `warm()`); lower `batchSize` for long texts (providers cap tokens per request);
+the cache never evicts; exported planner state holds the vectors but not the embedding model, so re-calibrate if you change model or dimensions.
 `openAIEmbed` also talks to local OpenAI-compatible servers (`baseUrl: "http://localhost:11434/v1"`: Ollama, LM Studio, $0);
-`voyageEmbed` calls Voyage. Zero dependencies, plain `fetch`. `featurize.stats` (`calls`, `texts`, `tokens`, `cacheHits`) measures the
+`voyageEmbed` calls Voyage. Zero dependencies, plain `fetch`. `featurize.stats` (a snapshot: `calls`, `texts`, `tokens`, `cacheHits`, `misses`) measures the
 embedding cost: tokens x price (checked Nov 13, 2026: OpenAI text-embedding-3-small $0.02 per 1M tokens, Voyage voyage-4-lite $0.02 per 1M).
 
 **Real-data effect: NOT measured yet.** Synthetic only (`npm run bench:embeddings`, fake embedders, messy workload, SLA 0.9, 8 seeds, 90 calibration samples):

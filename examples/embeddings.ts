@@ -56,8 +56,21 @@ const check = (ok: boolean, msg: string) => {
   check(embedCalls === 2, "warm of cached inputs makes no call");
   check(Math.abs(Math.hypot(...f("ccc")) - 1) < 1e-9 && f.stats.cacheHits === 1, "unit vectors, cache hit counted");
   check((() => { try { f("never"); return false; } catch (e) { return /warm/.test((e as Error).message); } })(), "miss throws a clear error");
-  const h = embeddingFeaturizer<string>({ embed: async (t) => ({ vectors: t.map(() => [1, 0]) }), onMiss: "hashed" });
-  check(h("unseen").length === 513 && h.stats.misses === 1, "onMiss hashed");
+  // Concurrent warm() of the same new text embeds it once.
+  let concurrentCalls = 0;
+  const c = embeddingFeaturizer<string>({ embed: async (t) => (concurrentCalls++, await new Promise((r) => setTimeout(r, 5)), { vectors: t.map(() => [1, 0]) }) });
+  await Promise.all([c.warm(["same"]), c.warm(["same"]), c.warm(["same"])]);
+  check(concurrentCalls === 1, `concurrent warm: ${concurrentCalls} calls`);
+  // Servers that omit `index`: positional order is used; a short response is an error.
+  const noIndex = async (_u: string, init: { body: string }) => {
+    const input: string[] = JSON.parse(init.body).input;
+    return { ok: true, status: 200, text: async () => "", json: async () => ({ data: input.map((t) => ({ embedding: [t.length] })) }) };
+  };
+  check((await openAIEmbed({ model: "m", fetch: noIndex })(["a", "bbb"])).vectors[1][0] === 3, "no index: positional");
+  check(await openAIEmbed({ model: "m", fetch: async () => ({ ok: true, status: 200, text: async () => "", json: async () => ({ data: [{ embedding: [1] }] }) }) })(["a", "b"]).then(() => false, (e: Error) => /got 1 vectors/.test(e.message)), "short response throws");
+  // A bad vector does not fix the dimension or poison the cache.
+  const nan = embeddingFeaturizer<string>({ embed: async (t) => ({ vectors: t.map(() => [Number.NaN, 1]), tokens: 7 }) });
+  check(await nan.warm(["x"]).then(() => false, (e: Error) => /invalid vector/.test(e.message)) && nan.stats.tokens === 7, "NaN vector rejected, tokens still counted");
   const bad = embeddingFeaturizer<string>({ embed: async (t) => ({ vectors: t.map((x, i) => (i === 0 ? [1, 0] : [1, 0, 0])) }) });
   check(await bad.warm(["p", "q"]).then(() => false, (e: Error) => /dimensions/.test(e.message)), "dimension mismatch throws");
 }
