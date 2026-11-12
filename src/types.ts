@@ -38,10 +38,18 @@ export interface SLA {
   confidence?: number;
   /**
    * Only with confidence: what to do when calibration data cannot certify the SLA.
-   * "safe" (default): pick the highest predicted-quality plan for every request until it can.
+   * "safe" (default): run one trusted plan for every request until it can: sla.fallbackPlan if set, else the
+   * plan with the best replayed quality.
    * "best-effort": use the threshold that came closest. Either way CalibrationReport.slaCertified is false.
    */
   onUncertified?: "safe" | "best-effort";
+  /**
+   * Only with confidence and onUncertified "safe": the plan you trust today (usually what you ran before
+   * Pathwise). Every request gets exactly this plan while the SLA cannot be certified. Must be in the knob space.
+   * Safe mode ignores maxCostUsd and maxLatencyMs, and the estimate for a plan calibration never measured is
+   * weak: pick a plan your calibration sample actually ran.
+   */
+  fallbackPlan?: Plan;
   maxLatencyMs?: number;
   maxCostUsd?: number;
 }
@@ -120,4 +128,11 @@ export interface CalibrationReport {
   certifiedQuality: number;
   /** True when certifiedQuality >= sla.minQuality. False means no threshold could certify the SLA. */
   slaCertified: boolean;
+  /**
+   * What decide() does after this calibration. "routing": cheapest plan per request predicted to clear
+   * qualityThreshold. "safe-plan": SLA not certified and onUncertified is "safe": one plan for every request.
+   */
+  policy: "routing" | "safe-plan";
+  /** The plan key used for every request when policy is "safe-plan" (sla.fallbackPlan if set). */
+  fixedPlan?: string;
 }
