@@ -6,7 +6,7 @@
  *   npm run bench:rag:table [-- --calibration 100 --test 200 --seed 7] [--plan-fill]
  *
  * --plan-fill also lists the missing (question, plan) pairs. It only prints; it never calls the API.
- * The question sets are sampled exactly as run.ts / replay.ts do, so the numbers refer to the same questions.
+ * Needs the dataset already downloaded (it exits instead of downloading). The question sets are sampled exactly as run.ts / replay.ts do, so the numbers refer to the same questions.
  */
 process.env.PATHWISE_BENCH_OFFLINE = "1"; // before the imports below read it: a cache miss throws, nothing is requested
 const { enumeratePlans, planKey } = await import("../../src/index.js");
@@ -14,6 +14,12 @@ const { SPACE, MODELS } = await import("./config.js");
 const { loadHotpot, sample } = await import("./dataset.js");
 const { OfflineMiss } = await import("./gemini.js");
 const { ragPipeline, scorer } = await import("./pipeline.js");
+
+const { existsSync } = await import("node:fs");
+if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url))) {
+  console.error("The dataset is not downloaded (bench/real-rag/data/). This tool never uses the network: run `npm run bench:rag:pilot` once to download it.");
+  process.exit(1);
+}
 
 const args = process.argv.slice(2);
 const num = (name: string, def: number) => {
