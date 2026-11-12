@@ -18,3 +18,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run demo
       - run: npm run build
+      - run: npm run bench:prune
+      - run: npm run bench:fallback
+      - run: npm run bench:embeddings
+      - run: npm run bench:langchain
+      - run: npm run bench:openai-compatible
