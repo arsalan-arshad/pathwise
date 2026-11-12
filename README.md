@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/banner/readme-banner-dark.png">
-  <img alt="Pathwise: the cheapest path to the answer" src="assets/banner/readme-banner-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/arsalan-arshad/pathwise/main/assets/banner/readme-banner-dark.png">
+  <img alt="Pathwise: the cheapest path to the answer" src="https://raw.githubusercontent.com/arsalan-arshad/pathwise/main/assets/banner/readme-banner-light.png">
 </picture>
 
 [![ci](https://github.com/arsalan-arshad/pathwise/actions/workflows/ci.yml/badge.svg)](https://github.com/arsalan-arshad/pathwise/actions/workflows/ci.yml) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
