@@ -65,11 +65,15 @@ export interface OpenAICompatibleOptions<I> {
    * confirmed. Set false if yours reports `completion_tokens_details.reasoning_tokens` on top of `completion_tokens`.
    */
   reasoningInCompletionTokens?: boolean;
-  /** Extra headers (e.g. OpenRouter's HTTP-Referer). Do not put secrets you do not want sent on every call. */
+  /** Extra headers (e.g. OpenRouter's HTTP-Referer), sent on every call. Their values are also scrubbed from error text. */
   headers?: Record<string, string>;
-  /** Retries on 429, 5xx and network errors or timeouts. Default 2. Not on 4xx, bad JSON or abort. */
+  /**
+   * Retries on 429, 5xx and network errors or timeouts (also a stalled body). Default 2. Not on other 4xx, bad JSON or abort.
+   * Worst case is (retries + 1) x timeoutMs plus waits. `costUsd` covers only the successful attempt: failed or
+   * abandoned attempts may still be billed by the provider.
+   */
   retries?: number;
-  /** First backoff in ms, doubled each retry (a numeric Retry-After header up to 30 s wins). Default 500. */
+  /** First backoff in ms, doubled each retry (a Retry-After header, seconds or HTTP date, capped at 30 s, wins). Default 500. */
   retryBaseMs?: number;
   /** Per-attempt timeout in ms. Default 60000. */
   timeoutMs?: number;
@@ -78,6 +82,8 @@ export interface OpenAICompatibleOptions<I> {
   /** Override `fetch` (tests, proxies). Default: global fetch. */
   fetch?: FetchFn;
 }
+
+const count = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 
 /** Dollar cost from `usage`. Missing token counts are an error in the pipeline, 0 here. */
 export function chatCostUsd(usage: ChatUsage, price: ModelPrice, reasoningInCompletionTokens = true): number {
@@ -94,6 +100,14 @@ const sleep = (ms: number, signal?: AbortSignal) =>
   });
 const abortError = () => Object.assign(new Error("pathwise/openai-compatible: aborted"), { name: "AbortError" });
 
+/** Retry-After as numeric seconds or an HTTP date, in ms, capped at 30 s (so a retry can come sooner than asked). */
+function retryAfterMs(h: string | null): number | undefined {
+  if (!h) return undefined;
+  const secs = Number(h);
+  const ms = Number.isFinite(secs) ? secs * 1000 : Date.parse(h) - Date.now();
+  return Number.isFinite(ms) && ms > 0 ? Math.min(ms, 30_000) : undefined;
+}
+
 class Retryable extends Error {
   constructor(msg: string, readonly retryAfterMs?: number) {
     super(msg);
@@ -106,12 +120,22 @@ export function openAICompatiblePipeline<I>(o: OpenAICompatibleOptions<I>): Pipe
   const retries = o.retries ?? 2;
   const retryBaseMs = o.retryBaseMs ?? 500;
   const timeoutMs = o.timeoutMs ?? 60_000;
+  if (!(Number.isInteger(retries) && retries >= 0)) throw new Error("pathwise/openai-compatible: retries must be an integer >= 0");
+  if (!(timeoutMs > 0) || !(retryBaseMs >= 0)) throw new Error("pathwise/openai-compatible: timeoutMs must be > 0 and retryBaseMs >= 0");
   const url = `${o.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const scrub = (s: string) => (o.apiKey ? s.split(o.apiKey).join("[redacted]") : s).slice(0, 300);
+  try {
+    new URL(url);
+  } catch {
+    throw new Error("pathwise/openai-compatible: baseUrl is not a valid URL");
+  }
+  // Secrets to scrub from error text: the apiKey and every header value (a key may travel in `headers` too).
+  const secrets = [o.apiKey, ...Object.values(o.headers ?? {})].filter((v): v is string => typeof v === "string" && v.length >= 6);
+  const scrub = (s: string) => secrets.reduce((acc, k) => acc.split(k).join("[redacted]"), s).slice(0, 300);
 
   async function attempt(body: string): Promise<{ text: string; usage?: ChatUsage }> {
     const f = (o.fetch ?? (globalThis as any).fetch) as FetchFn | undefined;
     if (!f) throw new Error("pathwise/openai-compatible: no fetch available (Node 22+ has one)");
+    if (o.signal?.aborted) throw abortError();
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     const onAbort = () => ctl.abort();
@@ -120,16 +144,16 @@ export function openAICompatiblePipeline<I>(o: OpenAICompatibleOptions<I>): Pipe
       const headers: Record<string, string> = { "content-type": "application/json", ...o.headers };
       if (o.apiKey) headers.authorization = `Bearer ${o.apiKey}`;
       let res;
+      let text: string;
       try {
         res = await f(url, { method: "POST", headers, body, signal: ctl.signal });
+        text = await res.text(); // a stalled or reset body is a timeout or network error too
       } catch (err) {
         if (o.signal?.aborted) throw abortError();
         throw new Retryable(ctl.signal.aborted ? `timed out after ${timeoutMs} ms` : `network error: ${scrub(String((err as Error)?.message ?? err))}`);
       }
-      const text = await res.text();
       if (res.status === 429 || res.status >= 500) {
-        const ra = Number(res.headers.get("retry-after"));
-        throw new Retryable(`HTTP ${res.status}: ${scrub(text)}`, Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 30_000) : undefined);
+        throw new Retryable(`HTTP ${res.status}: ${scrub(text)}`, retryAfterMs(res.headers.get("retry-after")));
       }
       if (!res.ok) throw new Error(`pathwise/openai-compatible: HTTP ${res.status}: ${scrub(text)}`);
       let json: any;
@@ -168,10 +192,14 @@ export function openAICompatiblePipeline<I>(o: OpenAICompatibleOptions<I>): Pipe
     const { usage } = result;
     let costUsd: number;
     if (o.cost) costUsd = o.cost(usage, plan);
-    else if (!usage || usage.prompt_tokens === undefined || usage.completion_tokens === undefined) {
+    else if (!usage) {
       throw new Error("pathwise/openai-compatible: the response has no usage; pass `cost` (costs must not be guessed)");
+    } else if (!count(usage.prompt_tokens) || !count(usage.completion_tokens)) {
+      throw new Error("pathwise/openai-compatible: usage.prompt_tokens and usage.completion_tokens must be non-negative numbers; pass `cost` to handle this provider");
+    } else if (o.reasoningInCompletionTokens === false && !count(usage.completion_tokens_details?.reasoning_tokens)) {
+      throw new Error("pathwise/openai-compatible: reasoningInCompletionTokens is false but usage has no valid completion_tokens_details.reasoning_tokens");
     } else costUsd = chatCostUsd(usage, entry.price, o.reasoningInCompletionTokens ?? true);
-    if (!Number.isFinite(costUsd + extraCostUsd) || extraCostUsd < 0) throw new Error("pathwise/openai-compatible: cost must be finite and non-negative");
+    if (!count(costUsd) || !count(extraCostUsd)) throw new Error("pathwise/openai-compatible: cost must be finite and non-negative");
     return { output: result.text, costUsd: costUsd + extraCostUsd };
   };
 }

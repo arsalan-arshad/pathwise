@@ -100,6 +100,47 @@ check((await fails(make()("q", plan), /not JSON/)) && hits === 1, "bad JSON");
 reset((_r, _b, res) => json(res, 200, { choices: [] }));
 check(await fails(make()("q", plan), /no choices\[0\]/), "no choices");
 
+// pre-aborted signal: no request is made
+{
+  reset((_r, _b, res) => json(res, 200, ok("x", { prompt_tokens: 1, completion_tokens: 1 })));
+  const ac = new AbortController();
+  ac.abort();
+  const name = await make({ signal: ac.signal })("q", plan).then(() => "no", (e: Error) => e.name);
+  check(name === "AbortError" && hits === 0, `pre-aborted: ${name}, ${hits} hit(s)`);
+}
+// abort during the backoff sleep
+{
+  reset((_r, _b, res) => json(res, 503, { error: { message: "later" } }));
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 30);
+  const t = performance.now();
+  const name = await make({ signal: ac.signal, retryBaseMs: 5000 })("q", plan).then(() => "no", (e: Error) => e.name);
+  check(name === "AbortError" && performance.now() - t < 1000 && hits === 1, `abort during backoff: ${name}, ${hits} hit(s)`);
+}
+// a stalled body (headers sent, body never finishes) is a timeout, retried
+reset((_r, _b, res) => (res.writeHead(200, { "content-type": "application/json" }), res.write('{"choices":')));
+check((await fails(make({ timeoutMs: 40, retries: 1 })("q", plan), /timed out after 40 ms.*after 2 attempts/)) && hits === 2, `stalled body retried (${hits} hits)`);
+// HTTP-date Retry-After is parsed (a date in the past: falls back to the backoff)
+reset((_r, _b, res, n) => (n === 1 ? json(res, 429, { error: { message: "x" } }, { "retry-after": new Date(Date.now() + 40).toUTCString() }) : json(res, 200, ok("ok", { prompt_tokens: 1, completion_tokens: 1 }))));
+check((await make({ retryBaseMs: 5 })("q", plan)).output === "ok" && hits === 2, "HTTP-date Retry-After");
+// 429 then success: cost only from the successful response
+reset((_r, _b, res, n) => (n === 1 ? json(res, 429, { error: { message: "x" }, usage: { prompt_tokens: 9e6, completion_tokens: 9e6 } }) : json(res, 200, ok("ok", { prompt_tokens: 1000, completion_tokens: 500 }))));
+check(Math.abs((await make()("q", plan)).costUsd - (1000 * 0.1 + 500 * 0.4) / 1e6) < 1e-12, "retry cost is from the successful attempt only");
+// invalid usage values fail loudly instead of mis-costing
+for (const bad of [{ prompt_tokens: 10, completion_tokens: null }, { prompt_tokens: 10, completion_tokens: "50" }, { prompt_tokens: -1, completion_tokens: 5 }]) {
+  reset((_r, _b, res) => json(res, 200, ok("x", bad)));
+  check(await fails(make()("q", plan), /non-negative numbers/), `bad usage ${JSON.stringify(bad)}`);
+}
+reset((_r, _b, res) => json(res, 200, ok("x", { prompt_tokens: 10, completion_tokens: 5 })));
+check(await fails(make({ reasoningInCompletionTokens: false })("q", plan), /reasoning_tokens/), "reasoning on top needs reasoning_tokens");
+// construction-time validation
+for (const [label, bad] of [["baseUrl", { baseUrl: "not a url" }], ["retries", { retries: -1 }], ["retries", { retries: 1.5 }], ["timeout", { timeoutMs: 0 }]] as const) {
+  check((() => { try { make(bad as never); return false; } catch { return true; } })(), `invalid ${label} ${JSON.stringify(bad)} throws at construction`);
+}
+// secrets in headers are scrubbed too
+reset((_r, _b, res) => json(res, 400, { error: { message: "denied for key-abc-123456" } }));
+check(await make({ headers: { "x-api-key": "key-abc-123456" } })("q", plan).then(() => false, (e: Error) => !e.message.includes("key-abc-123456")), "header secret scrubbed from errors");
+
 // the key never appears in an error message, even if the server echoes it
 reset((_r, _b, res) => json(res, 400, { error: { message: "invalid key sk-secret-123" } }));
 check(await make({ apiKey: "sk-secret-123" })("q", plan).then(() => false, (e: Error) => !e.message.includes("sk-secret-123") && /redacted/.test(e.message)), "api key scrubbed from errors");
