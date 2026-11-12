@@ -55,6 +55,18 @@ confidence (Wilson lower bound). If no bar does, it runs the best plan for every
 add calibration samples. With a noisy judge, set `scorerErrorRate`: calibration then majority-votes
 each verdict, confirms passes with extra votes, and corrects scores for the judge's error rate.
 
+**Your own fallback.** If calibration cannot certify the SLA, the default "safe" mode runs one plan inferred from the
+calibration data. Declare the plan you trust today instead, and uncertified runs use exactly that plan:
+
+```ts
+sla: { minQuality: 0.95, confidence: 0.9, fallbackPlan: { model: "large", topK: 10, thinking: "high" } }
+// report.policy === "safe-plan" and report.fixedPlan === that plan's key while slaCertified is false
+```
+
+It must be a plan in your knob space and needs `confidence` and `onUncertified: "safe"` (the default); anything else throws.
+Synthetic check (`npm run bench:fallback`, 5 workloads, 30 samples, 99% bar): every uncertified request ran the fallback,
+so accuracy and cost equal running that plan directly (e.g. 79.0% at $1.20 per 300 queries, both ways). No extra runs.
+
 Simulated benchmark (`npm run bench:sla`, **synthetic**, 20 random workloads per row, 1,000 production queries,
 "messy" = question text predicts difficulty poorly, "noisy" = judge wrong 10% of the time):
 

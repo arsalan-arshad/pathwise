@@ -146,6 +146,12 @@ export class Planner<I, O> {
     for (const [name, v] of [["scoreVotes", this.calib.scoreVotes], ["confirmVotes", this.calib.confirmVotes]] as const) {
       if (!(Number.isInteger(v) && v % 2 === 1)) throw new Error(`calibration.${name} must be an odd integer`);
     }
+    const fb = rest.sla.fallbackPlan;
+    if (fb) {
+      if (rest.sla.confidence === undefined) throw new Error("sla.fallbackPlan needs sla.confidence");
+      if ((rest.sla.onUncertified ?? "safe") !== "safe") throw new Error('sla.fallbackPlan needs onUncertified "safe"');
+      if (!this.planByKey.has(planKey(fb))) throw new Error("sla.fallbackPlan must be one of the plans in the space");
+    }
     this.calibErrorRate = majorityErrorRate(this.opts.scorerErrorRate, this.calib.scoreVotes);
     this.threshold = rest.sla.minQuality;
   }
@@ -212,6 +218,8 @@ export class Planner<I, O> {
       qualityThreshold: this.threshold,
       certifiedQuality: this.certification.quality,
       slaCertified: this.certification.certified,
+      policy: this.safeMode ? "safe-plan" : "routing",
+      ...(this.safeMode && this.safePlanKey() !== undefined ? { fixedPlan: this.safePlanKey() } : {}),
     };
   }
 
@@ -279,7 +287,7 @@ export class Planner<I, O> {
   decide(input: I): Decision {
     const estimates = this.estimate(input);
     if (this.safeMode) {
-      // SLA could not be certified: run the plan with the best measured quality across all data.
+      // SLA could not be certified: run the declared sla.fallbackPlan, else the plan with the best measured quality.
       const safe = estimates.find((e) => e.planKey === this.safePlanKey());
       if (safe) return { plan: safe.plan, estimate: safe, fallback: true };
     }
@@ -609,6 +617,8 @@ export class Planner<I, O> {
    * winner are credited with the winner's score here, even if the monotonicity check failed.
    */
   private safePlanKey(): string | undefined {
+    const declared = this.opts.sla.fallbackPlan;
+    if (declared) return planKey(declared);
     if (this.safeKey !== undefined) return this.safeKey;
     const replay = this.records.filter((r) => r.winner !== undefined || r.observations.length > 1);
     let best: { key: string; q: number; c: number } | undefined;
