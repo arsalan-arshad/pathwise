@@ -125,7 +125,7 @@ const planner = createPlanner({ space, pipeline, scorer, sla }); // space, score
 `models` maps the names in your `model` knob to `{ model, price }` (USD per 1M tokens); cost is computed from the real `usage`
 of each call. The adapter never imports `ai` (zero dependencies in core); it targets `ai` 7.x and only needs `generateText`
 to return `{ text, usage }`. Runnable without a key: `npm run bench:adapter` (fake model, synthetic). Measured on that
-fake: adapter overhead about 0.0002 ms per call, `decide()` about 0.07 ms.
+fake: adapter overhead about 0.0002 ms per call, `decide()` about 0.07 ms. Smoke-tested on Nov 13, 2026 against `ai` 7.0.171 and `@langchain/core` 1.4.0 using their own mock/fake models (no live provider calls) (`npm run smoke:real-packages`).
 
 ## Real embeddings
 
@@ -172,9 +172,7 @@ adapter guesses nothing. Cost comes from the message's `usage_metadata` (by defa
 usage the call fails with a clear error, or pass `cost: (usage, plan) => usd` instead of `price`. It never imports `@langchain/core` (zero
 dependencies in core) and targets `@langchain/core` 1.x (npm latest 1.4.0 on Nov 13, 2026).
 
-**What was tested: a fake chat model only** (`npm run bench:langchain`, synthetic). **Not tested against the real `@langchain/core` package**
-(the real-package smoke test could not run: the sandbox blocked executing the installed package). The structural types are modelled on the
-documented `invoke` / `AIMessage` / `usage_metadata` shapes, so verify with your own model before relying on it. Synthetic: adapter overhead about
+**What was tested:** a fake chat model (`npm run bench:langchain`, synthetic). Smoke-tested on Nov 13, 2026 against `ai` 7.0.171 and `@langchain/core` 1.4.0 using their own mock/fake models (no live provider calls) (`npm run smoke:real-packages`). Not tested against live providers. Synthetic: adapter overhead about
 0.0002 ms per call, `decide()` about 0.07 ms.
 
 ## Demo
@@ -198,8 +196,8 @@ The workload is synthetic; real savings depend on how varied your traffic is.
 ## Roadmap
 
 - [x] Smarter calibration: cheapest-first search with early stop, dominance pruning, monotonicity audits
-- [ ] Real embeddings featurizer (OpenAI / Voyage / local) instead of hashed text features
-- [ ] Adapters for Vercel AI SDK, LangChain.js, LlamaIndex.TS
+- [x] Real embeddings featurizer (OpenAI / Voyage / local) instead of hashed text features (adapter shipped; the effect on real data is not measured yet)
+- [x] Adapters for Vercel AI SDK and LangChain.js. LlamaIndex.TS is archived and deprecated (Apr 2026), so it is skipped: the [OpenAI-compatible adapter](#openai-compatible-endpoints-no-sdk) covers the rest
 - [ ] Persistent store (SQLite / Postgres) for learned data
 - [x] Confidence bounds on predicted quality (guarantee the SLA, not just the average)
 - [ ] Hosted dashboard: dollars saved, SLA met, plan mix over time

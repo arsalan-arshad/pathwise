@@ -42,7 +42,8 @@
     "bench:rag:table": "tsx bench/real-rag/table.ts",
     "bench:adapter": "tsx examples/vercel-ai.ts",
     "bench:embeddings": "tsx examples/embeddings.ts",
-    "bench:langchain": "tsx examples/langchain.ts"
+    "bench:langchain": "tsx examples/langchain.ts",
+    "smoke:real-packages": "bash bench/real-packages/run.sh"
   },
   "license": "MIT",
   "engines": {
