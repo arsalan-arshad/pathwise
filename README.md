@@ -175,6 +175,35 @@ dependencies in core) and targets `@langchain/core` 1.x (npm latest 1.4.0 on Nov
 **What was tested:** a fake chat model (`npm run bench:langchain`, synthetic). Smoke-tested on Nov 13, 2026 against `ai` 7.0.171 and `@langchain/core` 1.4.0 using their own mock/fake models (no live provider calls) (`npm run smoke:real-packages`). Not tested against live providers. Synthetic: adapter overhead about
 0.0002 ms per call, `decide()` about 0.07 ms.
 
+## OpenAI-compatible endpoints (no SDK)
+
+```ts
+import { openAICompatiblePipeline } from "pathwise/openai-compatible";
+
+const pipeline = openAICompatiblePipeline({
+  baseUrl: "http://localhost:11434/v1",                 // Ollama; see the table for others
+  models: { small: { model: "qwen3:4b", price: { inputPerMTok: 0, outputPerMTok: 0 } } },
+  prepare: (q, plan) => ({ messages: [{ role: "user", content: buildPrompt(q, plan.topK as number) }] }),
+  settings: (plan) => ({ reasoning_effort: plan.thinking as string }),   // optional extra request fields
+});
+```
+
+Plain global `fetch`, zero dependencies. One adapter for any server that speaks `POST {baseUrl}/chat/completions`. Base URLs, from the providers' docs (read Nov 13, 2026):
+
+| Provider | `baseUrl` | Key |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | `apiKey` |
+| Gemini (OpenAI-compatible endpoint) | `https://generativelanguage.googleapis.com/v1beta/openai` | `apiKey` = Gemini API key |
+| Ollama (local) | `http://localhost:11434/v1` | none needed (ignored) |
+| OpenRouter | `https://openrouter.ai/api/v1` (taken from the docs' samples) | `apiKey` |
+
+Cost comes from the response's real `usage` and your price table; a response without `usage` fails loudly (or pass `cost: (usage, plan) => usd`), so costs are never guessed.
+`reasoning_effort` and its accepted values differ by provider (per the Gemini and Ollama docs read Nov 13, 2026; not tested here): pass it in `settings` yourself.
+Whether `completion_tokens` already includes reasoning tokens is not stated outright for every provider: the default assumes it does, set `reasoningInCompletionTokens: false` if yours reports them on top.
+The key comes only from the `apiKey` option (never the environment), goes only in the `Authorization` header and is scrubbed from error messages (header values too). Retries (default 2, exponential backoff, `Retry-After` as seconds or HTTP date, capped at 30 s) on 429, 5xx, network errors and timeouts (a stalled body too); per-attempt `timeoutMs` (default 60 s, so the worst case is (retries+1) x 60 s) and an `AbortSignal`. `costUsd` covers the successful attempt only: failed attempts may still be billed by the provider. Invalid `usage` values (null, strings, negatives) fail loudly.
+
+**What was tested:** a local fake server on 127.0.0.1 (real HTTP round trips, no external network, `npm run bench:openai-compatible`): normal response, reasoning usage, missing usage, 429 then success, 500 exhausted, timeout, abort, bad JSON, key scrubbing, and a full calibrate/run loop. **No live provider was called.** Synthetic overhead on localhost: the adapter is not measurable against a bare `fetch` round trip (about 0.1 ms per call; the difference between runs is smaller than the run-to-run noise), `decide()` about 0.08 ms.
+
 ## Demo
 
 ```bash
