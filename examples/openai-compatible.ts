@@ -133,6 +133,13 @@ for (const bad of [{ prompt_tokens: 10, completion_tokens: null }, { prompt_toke
 }
 reset((_r, _b, res) => json(res, 200, ok("x", { prompt_tokens: 10, completion_tokens: 5 })));
 check(await fails(make({ reasoningInCompletionTokens: false })("q", plan), /reasoning_tokens/), "reasoning on top needs reasoning_tokens");
+// many trailing slashes: handled in linear time
+{
+  reset((_r, _b, res) => json(res, 200, ok("x", { prompt_tokens: 1, completion_tokens: 1 })));
+  const t = performance.now();
+  await make({ baseUrl: baseUrl + "/".repeat(200_000) })("q", plan);
+  check(performance.now() - t < 1000 && lastReq?.url === "/v1/chat/completions", "200k trailing slashes in baseUrl");
+}
 // construction-time validation
 for (const [label, bad] of [["baseUrl", { baseUrl: "not a url" }], ["retries", { retries: -1 }], ["retries", { retries: 1.5 }], ["timeout", { timeoutMs: 0 }]] as const) {
   check((() => { try { make(bad as never); return false; } catch { return true; } })(), `invalid ${label} ${JSON.stringify(bad)} throws at construction`);

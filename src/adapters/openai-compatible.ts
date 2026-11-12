@@ -122,7 +122,9 @@ export function openAICompatiblePipeline<I>(o: OpenAICompatibleOptions<I>): Pipe
   const timeoutMs = o.timeoutMs ?? 60_000;
   if (!(Number.isInteger(retries) && retries >= 0)) throw new Error("pathwise/openai-compatible: retries must be an integer >= 0");
   if (!(timeoutMs > 0) || !(retryBaseMs >= 0)) throw new Error("pathwise/openai-compatible: timeoutMs must be > 0 and retryBaseMs >= 0");
-  const url = `${o.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  let base = o.baseUrl;
+  while (base.endsWith("/")) base = base.slice(0, -1); // a loop, not a regex: no backtracking on long runs of "/"
+  const url = `${base}/chat/completions`;
   try {
     new URL(url);
   } catch {
