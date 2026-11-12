@@ -98,6 +98,21 @@ What this shows, and what it does not:
 - The first run of this benchmark exposed a real bug: calibration pruned the best plans on queries every plan fails, and the guaranteed mode then scored 0.669 at $0.00144/q (worse and dearer than a plain default). Fixed in [#13](https://github.com/arsalan-arshad/pathwise/pull/13);
   both runs are kept in [`bench/real-rag/results`](bench/real-rag/results) (`run-2026-11-10T21-22-40-111Z.md` before, `run-2026-11-11T22-16-57-266Z.md` after).
 
+## Vercel AI SDK
+
+```ts
+import { generateText } from "ai";
+import { vercelAIPipeline } from "pathwise/vercel-ai";
+
+const pipeline = vercelAIPipeline({ generateText, models, prepare: (q, plan) => ({ prompt: buildPrompt(q, plan.topK) }) });
+const planner = createPlanner({ space, pipeline, scorer, sla });
+```
+
+`models` maps the names in your `model` knob to `{ model, price }` (USD per 1M tokens); cost is computed from the real `usage`
+of each call. The adapter never imports `ai` (zero dependencies in core); it targets `ai` 7.x and only needs `generateText`
+to return `{ text, usage }`. Runnable without a key: `npm run bench:adapter` (fake model, synthetic). Measured on that
+fake: adapter overhead about 0.0002 ms per call, `decide()` about 0.07 ms.
+
 ## Demo
 
 ```bash
