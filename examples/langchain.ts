@@ -43,6 +43,9 @@ const noUsage = langchainPipeline<Query>({ model: () => fakeChat("small", false)
 check(await noUsage({ text: "x", difficulty: 0.1 }, { model: "small" }).then(() => false, (e: Error) => /no usage_metadata/.test(e.message)), "missing usage is an error");
 const viaCost = langchainPipeline<Query>({ model: () => fakeChat("small", false), cost: () => 0.001, prepare: () => ({ input: "2|0.1", extraCostUsd: 0.5 }) });
 check((await viaCost({ text: "x", difficulty: 0.1 }, { model: "small" })).costUsd === 0.501, "cost callback + extra cost");
+check(Math.abs(langchainCostUsd({ input_tokens: 1000, output_tokens: 500, output_token_details: { reasoning: 300 } }, { inputPerMTok: 1, outputPerMTok: 10 }, false) - 0.009) < 1e-12, "reasoning added when reported separately");
+check(await langchainPipeline<Query>({ model: () => fakeChat("small"), price: () => undefined as never, prepare: () => ({ input: "2|0.1" }) })({ text: "x", difficulty: 0.1 }, { model: "zzz" }).then(() => false, (e: Error) => /no price for plan/.test(e.message)), "missing price is a clear error");
+check((() => { try { langchainPipeline({ model: () => fakeChat("small"), price: () => PRICE.small, cost: () => 0, prepare: () => ({ input: "" }) }); return false; } catch { return true; } })(), "price and cost together throw");
 check((() => { try { langchainPipeline({ model: () => fakeChat("small"), prepare: () => ({ input: "" }) }); return false; } catch { return true; } })(), "price or cost required");
 
 async function main() {

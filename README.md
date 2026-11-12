@@ -127,6 +127,33 @@ of each call. The adapter never imports `ai` (zero dependencies in core); it tar
 to return `{ text, usage }`. Runnable without a key: `npm run bench:adapter` (fake model, synthetic). Measured on that
 fake: adapter overhead about 0.0002 ms per call, `decide()` about 0.07 ms.
 
+## Real embeddings
+
+```ts
+import { embeddingFeaturizer, openAIEmbed } from "pathwise/embeddings";
+
+const featurize = embeddingFeaturizer({ embed: openAIEmbed({ apiKey, model: "text-embedding-3-small" }), text: (q) => q.question });
+await featurize.warm(calibrationQueries);                 // batched, cached
+const planner = createPlanner({ /* ... */ featurize });   // await featurize.warm([q]) before each new request
+```
+
+`featurize` stays synchronous (so `decide()` stays fast): embeddings are fetched ahead of time with `warm()` and read from a cache.
+A text you did not warm throws a clear error. Concurrent `warm()` calls for the same text embed it once.
+Limits: no retry, backoff or timeout (a 429 rejects `warm()`); lower `batchSize` for long texts (providers cap tokens per request);
+the cache never evicts; exported planner state holds the vectors but not the embedding model, so re-calibrate if you change model or dimensions.
+`openAIEmbed` also talks to local OpenAI-compatible servers (`baseUrl: "http://localhost:11434/v1"`: Ollama, LM Studio, $0);
+`voyageEmbed` calls Voyage. Zero dependencies, plain `fetch`. `featurize.stats` (a snapshot: `calls`, `texts`, `tokens`, `cacheHits`, `misses`) measures the
+embedding cost: tokens x price (checked Nov 13, 2026: OpenAI text-embedding-3-small $0.02 per 1M tokens, Voyage voyage-4-lite $0.02 per 1M).
+
+**Real-data effect: NOT measured yet.** Synthetic only (`npm run bench:embeddings`, fake embedders, messy workload, SLA 0.9, 8 seeds, 90 calibration samples):
+
+| Features | SLA misses (mean / guaranteed) | Production cost (mean / guaranteed) | Calibration runs |
+|---|---|---|---|
+| hashed text | 0/8 / 0/8 | $7.16 / $8.08 | 457 |
+| embedding that encodes difficulty (an oracle: upper bound) | 0/8 / 0/8 | $5.15 / $5.15 | 409 |
+| pure-noise embedding (control) | 6/8 / 0/8 | $14.75 / $22.35 | 465 |
+
+An embedding only helps if it carries signal about difficulty; a useless one is worse than hashed words. After `warm`, `decide()` is ~0.08 ms.
 ## LangChain.js
 
 ```ts
@@ -141,7 +168,7 @@ const planner = createPlanner({ space, pipeline, scorer, sla });
 ```
 
 You build the chat model for each plan (LangChain sets thinking, max tokens and temperature on the model, with provider-specific names), so the
-adapter guesses nothing. Cost comes from the message's `usage_metadata` (`output_tokens` already includes reasoning tokens); if a model reports no
+adapter guesses nothing. Cost comes from the message's `usage_metadata` (by default `output_tokens` is assumed to include reasoning tokens, LangChain's documented convention, not verified per provider: set `reasoningInOutputTokens: false` if yours reports them separately; cached input is not discounted); if a model reports no
 usage the call fails with a clear error, or pass `cost: (usage, plan) => usd` instead of `price`. It never imports `@langchain/core` (zero
 dependencies in core) and targets `@langchain/core` 1.x (npm latest 1.4.0 on Nov 13, 2026).
 
