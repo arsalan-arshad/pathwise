@@ -60,3 +60,10 @@ const mean = (f: (r: (typeof rows)[number]) => number) => rows.reduce((a, r) => 
 console.log(`SYNTHETIC premature-pruning bench, ${SEEDS} seeds, ${CALIBRATION} calibration queries, SLA ${SLA}`);
 console.log(`pricier model pruned in ${rows.filter((r) => r.prunedLarge).length}/${SEEDS} runs`);
 console.log(`production accuracy ${mean((r) => r.accuracy).toFixed(3)} (SLA ${SLA}; best possible 0.550 = easy + hard share; the small model alone gets 0.300), calibration runs ${mean((r) => r.calibRuns).toFixed(0)}, production cost ${mean((r) => r.prodCost).toFixed(0)}`);
+
+// Regression bench: pruning the pricier model is the bug this guards against, so it must fail CI.
+const pruned = rows.filter((r) => r.prunedLarge).length;
+if (pruned > 0) {
+  console.error(`FAIL: the pricier model was pruned in ${pruned}/${SEEDS} runs`);
+  process.exit(1);
+}
