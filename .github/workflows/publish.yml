@@ -1,30 +1,41 @@
-name: publish
+name: Publish to GitHub Packages
 
-# Publishes @arsalandev/pathwise to npm when a GitHub Release is published.
-# One-time setup (by the repo owner, never by Claude): create an npm automation (granular, publish) token for the
-# @arsalandev scope and save it as the repository secret NPM_TOKEN. Then: bump "version" in package.json, merge it,
-# and create a GitHub Release whose tag is v<version> (for example v0.1.1).
+# Publishes the package to GitHub Packages (npm registry) when a GitHub Release is published, or when someone runs
+# the workflow by hand. The package on npmjs.com (@arsalandev/pathwise) is published separately, by hand, by the
+# repository owner.
+#
+# GitHub Packages only accepts npm names scoped to the repository owner, so the name is changed to
+# @arsalan-arshad/pathwise on the runner only; package.json in the repository keeps @arsalandev/pathwise.
+# The built-in GITHUB_TOKEN is used: no personal access token and no repository secret is involved.
+#
+# How to release: bump "version" in package.json, merge it, then create a GitHub Release with the tag v<version>.
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write # npm provenance (links the package to this repo and workflow run)
 
 jobs:
   publish:
+    # Forks cannot publish to this owner's registry.
     if: github.repository == 'arsalan-arshad/pathwise'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
-          cache: npm
-          registry-url: https://registry.npmjs.org
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@arsalan-arshad'
       - run: npm ci
       - name: Release tag must match package.json version
+        if: github.event_name == 'release'
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
@@ -33,10 +44,9 @@ jobs:
             echo "Release tag $TAG does not match package.json version v$version" >&2
             exit 1
           fi
-      - run: npm run typecheck
-      - run: npm run demo
-      - run: npm run build
-      - run: npm run bench:prune
-      - run: npm publish --provenance --access public
+      - name: Scope the package name for GitHub Packages (this runner only)
+        run: npm pkg set name=@arsalan-arshad/pathwise
+      # prepublishOnly runs the typecheck and the build before anything is uploaded.
+      - run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
