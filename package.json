@@ -1,5 +1,5 @@
 {
-  "name": "@arsalan-arshad/pathwise",
+  "name": "@arsalandev/pathwise",
   "version": "0.1.0",
   "description": "A query planner for RAG and agent pipelines: meet your quality SLA at the lowest cost.",
   "keywords": [

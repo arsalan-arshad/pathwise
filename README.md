@@ -12,11 +12,11 @@ Databases have had query optimizers for 50 years. AI pipelines don't: teams hard
 ## Install
 
 ```bash
-npm install @arsalan-arshad/pathwise
+npm install @arsalandev/pathwise
 ```
 
 Or from source: `git clone https://github.com/arsalan-arshad/pathwise && cd pathwise && npm install && npm run build`. Adapters are separate entry points
-(`@arsalan-arshad/pathwise/vercel-ai`, `/langchain`, `/embeddings`, `/openai-compatible`); the core has zero runtime dependencies.
+(`@arsalandev/pathwise/vercel-ai`, `/langchain`, `/embeddings`, `/openai-compatible`); the core has zero runtime dependencies.
 
 ## How it works
 
@@ -26,7 +26,7 @@ Or from source: `git clone https://github.com/arsalan-arshad/pathwise && cd path
 4. **Keep learning.** A fraction of production runs are scored and fed back, so it adapts as models and prices change.
 
 ```ts
-import { createPlanner } from "@arsalan-arshad/pathwise";
+import { createPlanner } from "@arsalandev/pathwise";
 
 const planner = createPlanner({
   space: { model: ["small", "medium", "large"], topK: [2, 5, 10], rerank: [false, true] },
@@ -124,8 +124,8 @@ What this shows, and what it does not:
 
 ```ts
 import { generateText } from "ai";
-import { createPlanner } from "@arsalan-arshad/pathwise";
-import { vercelAIPipeline } from "@arsalan-arshad/pathwise/vercel-ai";
+import { createPlanner } from "@arsalandev/pathwise";
+import { vercelAIPipeline } from "@arsalandev/pathwise/vercel-ai";
 
 const pipeline = vercelAIPipeline({ generateText, models, prepare: (q, plan) => ({ prompt: buildPrompt(q, plan.topK) }) });
 const planner = createPlanner({ space, pipeline, scorer, sla }); // space, scorer, sla: yours
@@ -139,7 +139,7 @@ fake: adapter overhead about 0.0002 ms per call, `decide()` about 0.07 ms. Smoke
 ## Real embeddings
 
 ```ts
-import { embeddingFeaturizer, openAIEmbed } from "@arsalan-arshad/pathwise/embeddings";
+import { embeddingFeaturizer, openAIEmbed } from "@arsalandev/pathwise/embeddings";
 
 const featurize = embeddingFeaturizer({ embed: openAIEmbed({ apiKey, model: "text-embedding-3-small" }), text: (q) => q.question });
 await featurize.warm(calibrationQueries);                 // batched, cached
@@ -166,7 +166,7 @@ An embedding only helps if it carries signal about difficulty; a useless one is 
 ## LangChain.js
 
 ```ts
-import { langchainPipeline } from "@arsalan-arshad/pathwise/langchain";
+import { langchainPipeline } from "@arsalandev/pathwise/langchain";
 
 const pipeline = langchainPipeline({
   model: (plan) => new ChatOpenAI({ model: plan.model as string, reasoning: { effort: plan.thinking as string } }),
@@ -187,7 +187,7 @@ dependencies in core) and targets `@langchain/core` 1.x (npm latest 1.4.0 on Nov
 ## OpenAI-compatible endpoints (no SDK)
 
 ```ts
-import { openAICompatiblePipeline } from "@arsalan-arshad/pathwise/openai-compatible";
+import { openAICompatiblePipeline } from "@arsalandev/pathwise/openai-compatible";
 
 const pipeline = openAICompatiblePipeline({
   baseUrl: "http://localhost:11434/v1",                 // Ollama; see the table for others
