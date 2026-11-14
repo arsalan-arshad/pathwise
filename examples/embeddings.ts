@@ -47,6 +47,26 @@ const check = (ok: boolean, msg: string) => {
   const failing = openAIEmbed({ model: "m", fetch: async () => ({ ok: false, status: 429, text: async () => "slow down", json: async () => ({}) }) });
   check(await failing(["a"]).then(() => false, (e: Error) => /HTTP 429/.test(e.message)), "HTTP error surfaces");
 
+  // A server that echoes the Authorization header in its error body must not leak the key through the thrown message.
+  {
+    const { createServer } = await import("node:http");
+    const echo = createServer((req, res) => {
+      res.writeHead(401, { "content-type": "text/plain" });
+      res.end(`unauthorized: you sent ${req.headers.authorization} (and again: ${req.headers.authorization})`);
+    });
+    await new Promise<void>((r) => echo.listen(0, "127.0.0.1", r));
+    const base = `http://127.0.0.1:${(echo.address() as { port: number }).port}`;
+    const key = "sk-test-SECRET-1234567890";
+    const toLocal = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => (globalThis as any).fetch(base + new URL(url).pathname, init);
+    const oaErr = await openAIEmbed({ apiKey: key, model: "m", baseUrl: `${base}/v1` })(["x"]).then(() => "", (e: Error) => e.message);
+    const vyErr = await voyageEmbed({ apiKey: key, model: "voyage-4-lite", fetch: toLocal })(["x"]).then(() => "", (e: Error) => e.message);
+    check(/HTTP 401/.test(oaErr) && oaErr.includes("[redacted]") && !oaErr.includes(key), `openAIEmbed error leaks the key or is wrong: ${oaErr}`);
+    check(/HTTP 401/.test(vyErr) && vyErr.includes("[redacted]") && !vyErr.includes(key), `voyageEmbed error leaks the key or is wrong: ${vyErr}`);
+    const noKey = await openAIEmbed({ model: "m", baseUrl: `${base}/v1` })(["x"]).then(() => "", (e: Error) => e.message);
+    check(/HTTP 401/.test(noKey) && !noKey.includes("[redacted]"), `no apiKey: error text should be untouched: ${noKey}`);
+    echo.close();
+  }
+
   // Featurizer behaviour: batching, cache, dimension check, miss handling.
   let embedCalls = 0;
   const f = embeddingFeaturizer<string>({ embed: async (t) => (embedCalls++, { vectors: t.map((x) => [x.length, 1]), tokens: t.length }), batchSize: 2 });
