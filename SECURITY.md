@@ -26,7 +26,7 @@ Facts that shape the risk (as of 0.1.0):
 
 - The library has **zero runtime dependencies**.
 - The library never reads API keys from the environment. Keys reach the adapters only through options you pass (for example
-  `apiKey`), and the OpenAI-compatible adapter scrubs them from error messages.
+  `apiKey`), and the OpenAI-compatible adapter removes the configured key and header values (6 characters or longer) from error messages.
 - `bench/` and `examples/` are development tools, not part of the published package.
 
 Out of scope: vulnerabilities in the third-party SDKs or servers you connect to (Vercel AI SDK, LangChain.js, model

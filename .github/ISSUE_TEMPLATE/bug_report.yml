@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. **Never paste API keys, tokens or private data** into this form (use placeholders). For a security problem, do not open an issue: see SECURITY.md.
+        Thanks for reporting. **Never paste API keys, tokens or private data** into this form (use placeholders). For a security problem, do not open an issue: see https://github.com/arsalan-arshad/pathwise/blob/main/SECURITY.md .
   - type: input
     id: version
     attributes:
