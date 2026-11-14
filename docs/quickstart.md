@@ -14,10 +14,12 @@ Zero runtime dependencies. Node 22 or newer.
 
 ## 2. Declare, calibrate, serve
 
+A sketch with placeholders (`myRag`, `judge`, `sampleQuestions` are your code; types are illustrative):
+
 ```ts
 import { createPlanner } from "@arsalandev/pathwise";
 
-const planner = createPlanner<string, { correct: boolean }>({
+const planner = createPlanner<string, MyAnswer>({
   // The knobs: everything that trades cost for quality in your pipeline.
   space: { model: ["small", "large"], topK: [2, 5] },
 
@@ -42,12 +44,12 @@ const report = await planner.calibrate(sampleQuestions);
 const { output, plan, costUsd } = await planner.run(question);
 ```
 
-The runnable version with a simulated pipeline is [`examples/quickstart.ts`](../examples/quickstart.ts); CI typechecks it. It prints,
+A runnable version, with a simulated pipeline and scorer in place of the placeholders, is [`examples/quickstart.ts`](../examples/quickstart.ts); CI typechecks it. It prints,
 for a simulated 300-question workload (SYNTHETIC): calibration used 217 runs for $1.014 and the planner served the remaining 180
 questions at $1.030 against $1.980 for always using the large model with `topK` 5, with 100.0% accuracy. Real pipelines will differ.
 
 Already using the Vercel AI SDK, LangChain.js or any OpenAI-compatible server? The pipeline function is a few lines with
-[the adapters](../README.md#vercel-ai-sdk) (`@arsalandev/pathwise/vercel-ai`, `/langchain`, `/openai-compatible`).
+[the adapters](../README.md#vercel-ai-sdk): `@arsalandev/pathwise/vercel-ai`, [`/langchain`](../README.md#langchainjs), [`/openai-compatible`](../README.md#openai-compatible-endpoints-no-sdk).
 
 ## 3. Read the calibration report
 
@@ -61,14 +63,15 @@ Already using the Vercel AI SDK, LangChain.js or any OpenAI-compatible server? T
 
 **"Not certified" is not a failure.** It means the data cannot prove the SLA at that confidence, and Pathwise plays safe: it never
 silently serves a cheaper plan it cannot back. On our one real-data run (HotpotQA, 100 calibration questions, an SLA of 95% of
-the best plan's own score) it did not certify and fell back to the most expensive plan, with no savings. See the README, "First
+always-max's own score) it did not certify and fell back to its safe plan, which turned out to be always-max (no `fallbackPlan` was set), with no savings. See the README, "First
 result on real data".
 
 ## 4. How many calibration questions?
 
-Certifying needs enough questions that the *lower* confidence bound clears your target. The table gives the **minimum** number of
-calibration questions for a single plan whose true quality is a given margin above the SLA, at `confidence: 0.9`
-(Wilson lower bound, the same formula the planner uses for pass/fail scores; computed for this page, not measured on a pipeline):
+Certifying needs enough questions that the *lower* confidence bound clears your target. The table gives the number of
+calibration questions at which a single plan whose observed quality equals its true quality, a given margin above the SLA, just clears the
+lower bound at `confidence: 0.9` (the planner's Wilson formula, written for pass/fail scores; computed for this page, not measured on a
+pipeline). Sampling noise means you will clear it at that n only about half the time, so plan on more:
 
 | SLA (`minQuality`) | plan 2 points above | plan 5 points above | plan 10 points above |
 |---|---|---|---|
@@ -79,12 +82,12 @@ calibration questions for a single plan whose true quality is a given margin abo
 (A plan at quality 1.00, in the 0.90 row's last column and the 0.95 row's middle column, never fails a question; real plans do not.)
 
 Read it this way:
-- **A tight margin needs hundreds of questions.** A 95%-of-your-best-plan SLA is the hard case: even the best plan sits only a few points
-  above the target, so a bound at n=100 falls short. Our real run: the best plan scored 0.764 and the target was 0.725 (95% of it); the
-  lower bound was 0.706 at n=100, 0.723 at n=200 and 0.731 at n=300.
-- **A looser target certifies much sooner.** Aim for a target with real margin below your best plan (for example 90% of its score, not 95%).
-- These are lower limits. Routing between several plans, noisy judges and graded (non pass/fail) scores all need more. Treat the table as
-  "do not expect to certify with fewer than this".
+- **A tight margin needs hundreds of questions.** A 95%-of-always-max SLA is the hard case: even the most expensive plan sits only a few points
+  above the target, so a bound at n=100 falls short. Our real run: always-max scored 0.764 and the target was 0.725 (95% of it); the
+  same formula applied to that mean F1 (a graded score, treated like a pass rate) gives 0.706 at n=100, 0.723 at n=200 and 0.731 at n=300.
+- **A looser target certifies much sooner.** Aim for a target with real margin below your best plan (for example 90% of always-max's score, not 95%).
+- The planner's real check replays its *routing* leave-one-out, not one fixed plan, and judges are noisy and scores often graded, so all of
+  that needs more questions than the table. Treat it as "do not expect to certify with fewer than this".
 
 ## 5. Production settings that matter
 
