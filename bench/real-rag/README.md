@@ -76,6 +76,16 @@ caffeinate -i npm run bench:rag:fill -- --phase test --plans "model=medium|think
 - **Test pairs** are only ever filled for plans you name, so nothing is chosen from test results.
 - **Checks:** `npm run bench:rag:fill:check` runs the tool in mock mode against a temp cache (refusals, quota stop, resume). It needs the dataset downloaded.
 
+## Fixed plan vs routing (offline)
+
+`npm run bench:rag:analyze` answers the question the first real run left open: does routing beat the best single fixed plan? It reads only the response cache ($0, no key, no network).
+
+- If any calibration pair is missing it prints `incomplete table: N pairs missing, no choice made` and stops. Nothing is chosen from a partial table.
+- With the full calibration table it takes SLA = 95% and 90% of always-max's F1 on the calibration questions, chooses the cheapest plan meeting each (ties: higher F1) using calibration only, and prints the plan ids that `bench:rag:fill --phase test --plans ...` must then fill.
+- With those test pairs cached it reports the plan's test F1 and cost, replays Pathwise (average-based and guaranteed) at the 95% SLA from the cache exactly as `run.ts` ran them, and compares them with a paired bootstrap (95% interval, 10,000 resamples, fixed seed) of the F1 and cost differences. Pathwise at 90% was never run and prints "not measured".
+- The verdict says "routing wins" or "the fixed plan wins" only when both sides have the same SLA outcome on test and the cost interval excludes 0; otherwise "no winner" or "not comparable". One dataset, one provider, one seed.
+- `npm run bench:rag:analyze:check`: SYNTHETIC fixture and mock answers (the choice does not change when test values change; the bootstrap is deterministic; every path prints what it should).
+
 ## Known limits
 
 - HotpotQA is public and old: models may have seen it in training, which flatters small models.

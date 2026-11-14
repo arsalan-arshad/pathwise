@@ -1,0 +1,127 @@
+{
+  "sla": 0.725,
+  "confidence": 0.9,
+  "calibration": 100,
+  "test": 200,
+  "models": {
+    "small": "gemini-3.1-flash-lite",
+    "medium": "gemini-3.5-flash-lite"
+  },
+  "results": [
+    {
+      "name": "Always cheap",
+      "quality": 0.5415850824802437,
+      "slaMet": false,
+      "costUsd": 0.05077350000000003,
+      "costPerQueryUsd": 0.00025386750000000013,
+      "latencyP50Ms": 3616.5116670000134,
+      "latencyP95Ms": 30164.920749999932
+    },
+    {
+      "name": "Pathwise (average-based)",
+      "quality": 0.7127906040828244,
+      "slaMet": false,
+      "costUsd": 0.14361724999999992,
+      "costPerQueryUsd": 0.0007180862499999996,
+      "latencyP50Ms": 5015.349750000052,
+      "latencyP95Ms": 34314.924,
+      "calibrationCostUsd": 0.21861725000000015,
+      "calibrationRuns": 298,
+      "planMix": {
+        "model=small|thinking=high|topK=5": 60,
+        "model=small|thinking=low|topK=5": 52,
+        "model=small|thinking=low|topK=10": 82,
+        "model=small|thinking=low|topK=2": 6
+      },
+      "report": {
+        "strategy": "adaptive",
+        "samples": 100,
+        "seedQueries": 2,
+        "runs": 298,
+        "exhaustiveRuns": 1200,
+        "costUsd": 0.21861725000000015,
+        "shortcutQueries": 0,
+        "audits": 6,
+        "prunedPlans": [
+          "model=medium|thinking=high|topK=10",
+          "model=medium|thinking=high|topK=2",
+          "model=medium|thinking=high|topK=5",
+          "model=medium|thinking=low|topK=10",
+          "model=medium|thinking=low|topK=2",
+          "model=medium|thinking=low|topK=5",
+          "model=small|thinking=high|topK=10",
+          "model=small|thinking=high|topK=2"
+        ],
+        "monotonicityViolationRate": 0,
+        "assumeMonotone": true,
+        "qualityThreshold": 0.725,
+        "certifiedQuality": null,
+        "slaCertified": false
+      }
+    },
+    {
+      "name": "Pathwise (guaranteed, confidence 0.9)",
+      "quality": 0.6686001278923479,
+      "slaMet": false,
+      "costUsd": 0.28874650000000013,
+      "costPerQueryUsd": 0.0014437325000000007,
+      "latencyP50Ms": 6252.309667000081,
+      "latencyP95Ms": 25657.899042000063,
+      "calibrationCostUsd": 0.21861725000000015,
+      "calibrationRuns": 298,
+      "planMix": {
+        "model=small|thinking=high|topK=5": 200
+      },
+      "report": {
+        "strategy": "adaptive",
+        "samples": 100,
+        "seedQueries": 2,
+        "runs": 298,
+        "exhaustiveRuns": 1200,
+        "costUsd": 0.21861725000000015,
+        "shortcutQueries": 0,
+        "audits": 6,
+        "prunedPlans": [
+          "model=medium|thinking=high|topK=10",
+          "model=medium|thinking=high|topK=2",
+          "model=medium|thinking=high|topK=5",
+          "model=medium|thinking=low|topK=10",
+          "model=medium|thinking=low|topK=2",
+          "model=medium|thinking=low|topK=5",
+          "model=small|thinking=high|topK=10",
+          "model=small|thinking=high|topK=2"
+        ],
+        "monotonicityViolationRate": 0,
+        "assumeMonotone": true,
+        "qualityThreshold": 0.8200000000000001,
+        "certifiedQuality": 0.7226738205837637,
+        "slaCertified": false
+      }
+    },
+    {
+      "name": "Typical default",
+      "quality": 0.684841742486904,
+      "slaMet": false,
+      "costUsd": 0.08716899999999995,
+      "costPerQueryUsd": 0.00043584499999999975,
+      "latencyP50Ms": 1066.703375000041,
+      "latencyP95Ms": 2234.3572919999715
+    },
+    {
+      "name": "Always max",
+      "quality": 0.7887884314188872,
+      "slaMet": true,
+      "costUsd": 0.3289799,
+      "costPerQueryUsd": 0.0016448995,
+      "latencyP50Ms": 1750.4914170000702,
+      "latencyP95Ms": 4378.700084000127
+    }
+  ],
+  "spend": {
+    "spentUsd": 2.8148791999999974,
+    "budgetUsd": 25,
+    "realCalls": 18,
+    "mock": false,
+    "modelSet": "free"
+  }
+}
