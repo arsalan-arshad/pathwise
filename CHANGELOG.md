@@ -36,8 +36,9 @@ questions, SLA = 95% of always-max F1 on the calibration questions (0.725). Deta
 [`bench/real-rag`](bench/real-rag/README.md).
 - Average-based Pathwise: F1 0.707 at $0.00066 per query, **60% cheaper than always-max** (F1 0.789, $0.00164), but it
   **missed the SLA** by 1.8 points.
-- Guaranteed mode **did not certify** at 100 calibration questions and fell back to always-max: SLA met, **no savings**.
-  With 100 questions even always-max cannot prove 95% of its own score.
+- Guaranteed mode **did not certify** at 100 calibration questions and fell back to its safe plan, which here was
+  always-max (`medium|high|topK10`): SLA met, **no savings**. A Wilson lower bound calculation (not a field in the results
+  files) says that with 100 questions even always-max cannot prove 95% of its own score (0.706 < 0.725).
 - **Not shown:** that routing beats the best single fixed plan. Only part of the plan table was measured.
 - One dataset, one provider, one run. HotpotQA may be in the models' training data.
 
@@ -46,7 +47,7 @@ questions, SLA = 95% of always-max F1 on the calibration questions (0.725). Deta
   adaptive calibration costs $1.67 (463 of 1,620 runs) instead of $17.74.
 - SLA guarantee: 0 misses in 320 simulated runs (16 scenarios x 20 workloads), against 45 for the average-based mode; the
   guarantee costs more when calibration evidence is thin.
-- `decide()` takes under 1 ms per request (about 0.07 ms in these runs).
+- `decide()` takes under 1 ms per request (about 0.07 ms, measured on the fake-model adapter benches).
 - Embeddings: a fake embedder that encodes difficulty beat hashed text features, and a pure-noise embedder was worse than
   hashed features. This says nothing about real embedding models.
 
@@ -55,9 +56,11 @@ questions, SLA = 95% of always-max F1 on the calibration questions (0.725). Deta
 - The adapters against live providers. `vercel-ai` and `langchain` were smoke-tested on Nov 13, 2026 against `ai` 7.0.171 and
   `@langchain/core` 1.4.0 using their own mock/fake models. `embeddings` and `openai-compatible` were tested only against
   fake servers on localhost.
-- Free-tier latency was erratic, so no latency result is reported from real data.
+- Latency on real data: free-tier latency was erratic (queueing, 503s), so the latency figures in the results files are
+  not meaningful and no latency result is claimed.
 
 ### Fixed during development
-- Calibration pruned the best plans on queries that every plan fails, which made guaranteed mode serve a worse, dearer plan on
-  the first real run (F1 0.669 at $0.00144 per query). Found by that run, fixed before release.
+- Calibration pruned the best plans on queries that both compared plans fail (ties at 0 counted as evidence that the cheaper
+  plan is never worse), which made guaranteed mode serve a worse, dearer plan in an early real run (F1 0.669 at $0.00144 per
+  query). Found by that run, fixed before release.
 - A regex in the OpenAI-compatible adapter was flagged by CodeQL (polynomial ReDoS); replaced with a loop.

@@ -117,7 +117,7 @@ What this shows, and what it does not:
   Pathwise detected that and measured more instead of assuming pricier means better.
 - **Not shown:** that routing beats the best single fixed plan. Only part of the 12-plan table was measured, so a well-chosen fixed plan may match it.
 - One dataset, one provider, one run, 100 calibration questions. HotpotQA may be in the models' training data. Free-tier latency was erratic, so latency numbers are not reported here.
-- The first run of this benchmark exposed a real bug: calibration pruned the best plans on queries every plan fails, and the guaranteed mode then scored 0.669 at $0.00144/q (worse and dearer than a plain default). Fixed in [#13](https://github.com/arsalan-arshad/pathwise/pull/13);
+- The first run of this benchmark exposed a real bug: calibration pruned the best plans on queries that both compared plans fail, and the guaranteed mode then scored 0.669 at $0.00144/q (worse and dearer than a plain default). Fixed in [#13](https://github.com/arsalan-arshad/pathwise/pull/13);
   both runs are kept in [`bench/real-rag/results`](bench/real-rag/results) (`run-2026-11-10T21-22-40-111Z.md` before, `run-2026-11-11T22-16-57-266Z.md` after).
 
 ## Vercel AI SDK
