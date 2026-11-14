@@ -86,6 +86,22 @@ caffeinate -i npm run bench:rag:fill -- --phase test --plans "model=medium|think
 - The verdict says "routing wins" or "the fixed plan wins" only when both sides have the same SLA outcome on test and the cost interval excludes 0; otherwise "no winner" or "not comparable". One dataset, one provider, one seed.
 - `npm run bench:rag:analyze:check`: SYNTHETIC fixture and mock answers (the choice does not change when test values change; the bootstrap is deterministic; every path prints what it should).
 
+## Real embeddings vs hashed features (RUN B)
+
+`npm run bench:rag:embed-compare -- --model nomic-embed-text` compares routing on hashed text features with routing on real embeddings from a local Ollama model ($0, no key). It uses only cached model answers (never a Gemini call) and needs the complete calibration table from the fill above; otherwise it prints the missing count and stops.
+
+```bash
+ollama pull nomic-embed-text      # once; 274 MB per the Ollama library page. The tool never pulls or installs anything.
+npm run bench:rag:embed-compare -- --model nomic-embed-text      # --base-url http://localhost:11434/v1 is the default
+```
+
+- **Calibration-only 5-fold cross-validation:** calibrate on 80 questions, serve the 20 held out, SLA guarantee at confidence 0.9, SLA = `--sla-of-max` (default 0.90) of always-max's F1. This is not the test set.
+- **Test set:** shown only when the test table is complete for all 12 plans (the router may pick any); otherwise "test: not measured" with the missing count. No partial test numbers.
+- Also printed: embed calls, texts and tokens (what the server reports; Ollama's `usage` is not documented, so "none reported" is possible), vector dimension, and the wall time to embed the 300 question texts.
+- If the server or model is missing it prints the exact `ollama pull` command and exits 1.
+- `--fake` runs with fake embedders (a difficulty-encoding oracle and pure noise) on the mock cache, every number labelled SYNTHETIC. `npm run bench:rag:embed-compare:check` covers it plus a fake local embeddings server.
+- One dataset, 100 held-out questions, one seed: small differences are noise.
+
 ## Known limits
 
 - HotpotQA is public and old: models may have seen it in training, which flatters small models.
