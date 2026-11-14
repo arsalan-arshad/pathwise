@@ -50,6 +50,32 @@ Replay a calibration from the cache without any API call (it stops at the first 
 Free-tier note: Google's terms for unpaid API use may allow it to use prompts to improve its products. This
 benchmark only sends public HotpotQA text; do not send private data on a free key.
 
+## Filling the table (free tier)
+
+Only part of the (question, plan) table is measured, so we cannot yet say whether routing beats the best single fixed plan. `bench:rag:fill` measures the missing pairs. It uses only `gemini-3.1-flash-lite` and `gemini-3.5-flash-lite` (it refuses any other model, the paid set, and `PATHWISE_BENCH_OFFLINE=1` with `--yes-live`).
+
+```bash
+export GEMINI_API_KEY=...     # your own shell only; the tool never prints or stores it
+cd ~/work/AI-architecture-patterns/pathwise && git checkout main && git pull && npm ci
+
+# 1. What is missing (no call is made). Expected before any fill: 501 of 1,200 calibration pairs, small 235 / medium 266.
+npm run bench:rag:fill -- --phase calibration
+
+# 2. Fill the calibration table. If it stops with "daily quota used up", rerun the SAME command after the reset
+#    (about 13:15 PKT); it resumes from the cache. Repeat until it prints "remaining 0".
+caffeinate -i npm run bench:rag:fill -- --phase calibration --yes-live
+
+# 3. Fill ONLY plans you chose on the calibration set (up to 4 per run) on the 200 test questions.
+caffeinate -i npm run bench:rag:fill -- --phase test --plans "model=medium|thinking=low|topK=10" --yes-live
+```
+
+- **Throttle:** `--rpm` is the total requests per minute across both models (default 10, a conservative free-tier setting; raise it only after checking https://aistudio.google.com/rate-limit). 501 calls take about 51 minutes at 10 per minute when no daily limit interferes.
+- **Daily limit:** a model whose daily quota is used up is stopped cleanly, the other model goes on, and the tool prints the remaining calls per model. A model that keeps failing after the retries is treated the same way. Exit code 0.
+- **Resumable:** every response is cached as it arrives (`cache/live-free/`). Ctrl-C leaves a valid cache.
+- **Ledger:** the persistent list-price ledger and its ceiling (`PATHWISE_BENCH_BUDGET`, default $25) still apply; the free tier bills $0. The dry run prints the list-price cost of the missing pairs as a ceiling for a paid key, not a forecast.
+- **Test pairs** are only ever filled for plans you name, so nothing is chosen from test results.
+- **Checks:** `npm run bench:rag:fill:check` runs the tool in mock mode against a temp cache (refusals, quota stop, resume). It needs the dataset downloaded.
+
 ## Known limits
 
 - HotpotQA is public and old: models may have seen it in training, which flatters small models.

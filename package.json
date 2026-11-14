@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc",
     "demo": "tsx examples/demo.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts examples/prune-bench.ts examples/vercel-ai.ts examples/quickstart.ts examples/openai-compatible.ts examples/embeddings.ts examples/langchain.ts examples/fallback-bench.ts bench/real-rag/run.ts bench/real-rag/pilot.ts bench/real-rag/replay.ts bench/real-rag/table.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts examples/prune-bench.ts examples/vercel-ai.ts examples/quickstart.ts examples/openai-compatible.ts examples/embeddings.ts examples/langchain.ts examples/fallback-bench.ts bench/real-rag/run.ts bench/real-rag/pilot.ts bench/real-rag/replay.ts bench/real-rag/table.ts bench/real-rag/fill.ts bench/real-rag/fill-check.ts",
     "bench:sla": "tsx examples/sla-bench.ts",
     "bench:prune": "tsx examples/prune-bench.ts",
     "bench:fallback": "tsx examples/fallback-bench.ts",
@@ -40,6 +40,8 @@
     "bench:rag": "tsx bench/real-rag/run.ts",
     "bench:rag:replay": "tsx bench/real-rag/replay.ts",
     "bench:rag:table": "tsx bench/real-rag/table.ts",
+    "bench:rag:fill": "tsx bench/real-rag/fill.ts",
+    "bench:rag:fill:check": "tsx bench/real-rag/fill-check.ts",
     "bench:adapter": "tsx examples/vercel-ai.ts",
     "bench:embeddings": "tsx examples/embeddings.ts",
     "bench:langchain": "tsx examples/langchain.ts",
