@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { BUDGET_USD, DEFAULT_RPM, MAX_OUTPUT_TOKENS, MODEL_SET, MODELS, PATHS, priceFor, type Tier } from "./config.js";
 
 export interface CallResult {
@@ -47,7 +48,14 @@ const MOCK = process.env.PATHWISE_BENCH_MOCK === "1";
 /** Replay from the cache only: never calls the API, never writes. A missing response throws OfflineMiss. */
 const OFFLINE = process.env.PATHWISE_BENCH_OFFLINE === "1";
 export const offlineMisses = new Set<string>();
-const CACHE_DIR = new URL(MOCK ? "mock/" : `live-${MODEL_SET}/`, PATHS.cache);
+// PATHWISE_BENCH_CACHE_DIR (absolute path) redirects the cache, for tests that must not touch the real one.
+const CACHE_OVERRIDE = process.env.PATHWISE_BENCH_CACHE_DIR;
+const CACHE_DIR = CACHE_OVERRIDE
+  ? pathToFileURL(CACHE_OVERRIDE.endsWith("/") ? CACHE_OVERRIDE : `${CACHE_OVERRIDE}/`)
+  : new URL(MOCK ? "mock/" : `live-${MODEL_SET}/`, PATHS.cache);
+/** Mock mode only: after this many calls a model throws the daily-quota error, to test the stop-and-resume path. */
+const MOCK_DAILY_QUOTA = Number(process.env.PATHWISE_BENCH_MOCK_DAILY_QUOTA ?? 0);
+const mockCalls = new Map<string, number>();
 const CACHE_FILE = new URL("responses.jsonl", CACHE_DIR);
 const LEDGER_FILE = new URL("spend.jsonl", CACHE_DIR);
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -73,6 +81,13 @@ async function init() {
       if (line) spent += (JSON.parse(line) as { costUsd: number }).costUsd;
     }
   }
+}
+
+/** The cached response for a call, or undefined. Never calls the API and never writes. */
+export async function peekCache(tier: Tier, thinking: "low" | "high", prompt: string): Promise<CallResult | undefined> {
+  await init();
+  const model = MODELS[tier];
+  return cache!.get(createHash("sha256").update(`${model}\n${thinking}\n${prompt}`).digest("hex"));
 }
 
 export function spendSoFar() {
@@ -126,6 +141,15 @@ export async function generate(tier: Tier, thinking: "low" | "high", prompt: str
   const worst = ((prompt.length / 3) * price.inputPerM + MAX_OUTPUT_TOKENS * price.outputPerM) / 1e6;
   if (spent + reserved + worst > BUDGET_USD) {
     throw new BudgetExceeded(`Budget $${BUDGET_USD} would be exceeded (spent $${spent.toFixed(2)}). Stopping.`);
+  }
+  if (MOCK && MOCK_DAILY_QUOTA > 0) {
+    const n = mockCalls.get(model) ?? 0;
+    if (n >= MOCK_DAILY_QUOTA) {
+      const msg = `Daily free-tier quota for ${model} is used up (simulated by PATHWISE_BENCH_MOCK_DAILY_QUOTA).`;
+      exhausted.set(model, msg);
+      throw new DailyQuotaError(msg);
+    }
+    mockCalls.set(model, n + 1);
   }
   reserved += worst;
   try {
