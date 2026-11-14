@@ -1,0 +1,46 @@
+{
+  "sla": 0.82,
+  "confidence": 0.9,
+  "calibration": 100,
+  "test": 200,
+  "models": {
+    "small": "gemini-3.1-flash-lite",
+    "medium": "gemini-3.5-flash-lite"
+  },
+  "results": [
+    {
+      "name": "Always cheap",
+      "quality": 0.5415850824802437,
+      "slaMet": false,
+      "costUsd": 0.05077350000000003,
+      "costPerQueryUsd": 0.00025386750000000013,
+      "latencyP50Ms": 3616.5116670000134,
+      "latencyP95Ms": 30164.920749999932
+    },
+    {
+      "name": "Typical default",
+      "quality": 0.684841742486904,
+      "slaMet": false,
+      "costUsd": 0.08716899999999995,
+      "costPerQueryUsd": 0.00043584499999999975,
+      "latencyP50Ms": 1066.703375000041,
+      "latencyP95Ms": 2234.3572919999715
+    },
+    {
+      "name": "Always max",
+      "quality": 0.7887884314188872,
+      "slaMet": false,
+      "costUsd": 0.3289799,
+      "costPerQueryUsd": 0.0016448995,
+      "latencyP50Ms": 1750.4914170000702,
+      "latencyP95Ms": 4378.700084000127
+    }
+  ],
+  "spend": {
+    "spentUsd": 1.4101974500000005,
+    "budgetUsd": 25,
+    "realCalls": 401,
+    "mock": false,
+    "modelSet": "free"
+  }
+}

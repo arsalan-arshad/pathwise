@@ -132,7 +132,9 @@ async function replay(name: string, confidence: number | undefined): Promise<Rep
     return `not measured: the replay needs a response that is not cached (${err.message})`;
   }
 }
-const replays = [await replay("Pathwise (average-based)", undefined), await replay("Pathwise (guaranteed, confidence 0.9)", 0.9)];
+// Replayed only when a chosen plan's test pairs are cached, so a missing test table costs no compute.
+let replayed: (Replay | string)[] | undefined;
+const getReplays = async () => (replayed ??= [await replay("Pathwise (average-based)", undefined), await replay("Pathwise (guaranteed, confidence 0.9)", 0.9)]);
 
 let needFill = false;
 for (const c of fixedByFraction) {
@@ -144,6 +146,7 @@ for (const c of fixedByFraction) {
     `can it be certified at n=${calibration.length}? Wilson 90% lower bound ${fmt(bound)} vs SLA ${c.sla}: ${bound >= c.sla ? "yes" : "no"}` +
       (need === null ? " (its observed F1 is not above the SLA)" : `; needs about ${need} questions at this observed F1 (computed, not measured; half the time more)`),
   );
+  if (c.fraction !== 0.95) console.log("Pathwise at 90%: not measured (it was run at the 95% SLA only; nothing is inferred from that run).");
   const t = await load(test, [c.plan]);
   const miss = t.missing.get(c.plan) ?? 0;
   if (miss > 0) {
@@ -155,11 +158,8 @@ for (const c of fixedByFraction) {
   const fixedCost = t.table.cost[0];
   const fixedMean = core.meanOf(fixedF1);
   console.log(`test (${test.length} q): F1 ${fmt(fixedMean)}, ${usd(core.meanOf(fixedCost))}/query, SLA ${fixedMean >= c.sla ? "met" : "MISSED"}`);
-  if (c.fraction !== 0.95) {
-    console.log("Pathwise at 90%: not measured (it was run at the 95% SLA only; nothing is inferred from that run).");
-    continue;
-  }
-  for (const r of replays) {
+  if (c.fraction !== 0.95) continue;
+  for (const r of await getReplays()) {
     if (typeof r === "string") {
       console.log(`${r}`);
       continue;
@@ -168,6 +168,14 @@ for (const c of fixedByFraction) {
     console.log(
       `${r.name}: test F1 ${fmt(rf1)}, ${usd(core.meanOf(r.cost))}/query, SLA ${rf1 >= c.sla ? "met" : "MISSED"}; calibration ${r.calRuns} of ${plans.length * calibration.length} runs, $${r.calCost.toFixed(2)} list` +
         (r.certified === undefined ? "" : `, certified ${r.certified}`),
+    );
+    const extra = tableUsd - r.calCost;
+    const perQuery = core.meanOf(fixedCost) - core.meanOf(r.cost);
+    console.log(
+      `calibration spend: the fixed plan needed the full table ($${tableUsd.toFixed(2)}, ${plans.length * calibration.length} calls); ${r.name} needed ${r.calRuns} runs ($${r.calCost.toFixed(2)} list), $${extra.toFixed(2)} less. ` +
+        (perQuery > 0
+          ? `Per query routing is $${perQuery.toFixed(5)} cheaper than the fixed plan, so the smaller calibration is repaid after about ${Math.ceil(Math.max(0, extra) / perQuery)} queries (point estimates, only if routing's quality is acceptable).`
+          : "Routing is not cheaper per query than the fixed plan, so routing saves nothing over it."),
     );
     const diff = core.pairedBootstrap({ f1: r.f1, cost: r.cost }, { f1: fixedF1, cost: fixedCost });
     console.log(
@@ -180,9 +188,6 @@ for (const c of fixedByFraction) {
     );
   }
 }
-console.log(
-  "\ncalibration spend: the fixed-plan choice needs the full table above; Pathwise's adaptive calibration is the 'calibration ... runs' figure printed per strategy (both at list price).",
-);
 if (needFill) {
   console.log(
     `\nnext: fill the test pairs of the chosen plans, then rerun this tool:\n  caffeinate -i npm run bench:rag:fill -- --phase test --plans "${chosenIds.join(",")}" --yes-live`,

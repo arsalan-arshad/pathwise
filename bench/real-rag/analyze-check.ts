@@ -58,6 +58,8 @@ check("verdict: routing wins when both meet and cost interval is below 0", /ROUT
 check("verdict: fixed wins when both meet and cost interval is above 0", /FIXED PLAN WINS/.test(verdict(side("R", true), side("F", true), { f1: iv(-0.01, 0.01), cost: iv(0.1, 0.5), n: 200 }, ctx)));
 check("verdict: no winner when intervals overlap", /NO WINNER/.test(verdict(side("R", true), side("F", true), { f1: iv(-0.01, 0.01), cost: iv(-0.1, 0.5), n: 200 }, ctx)));
 check("verdict: unequal SLA outcomes are not called a win", /not comparable/.test(verdict(side("R", false), side("F", true), { f1: iv(-0.1, -0.01), cost: iv(-0.5, -0.1), n: 200 }, ctx)));
+check("verdict: when neither meets the SLA no winner is claimed", /neither meets the test SLA, so no winner is claimed/.test(verdict(side("R", false), side("F", false), { f1: iv(-0.01, 0.01), cost: iv(-0.5, -0.1), n: 200 }, ctx)));
+check("verdict: warns when routing's F1 interval is below 0", /WARNING: routing's F1 is lower/.test(verdict(side("R", true), side("F", true), { f1: iv(-0.1, -0.02), cost: iv(-0.5, -0.1), n: 200 }, ctx)));
 check("questionsNeeded matches the quick-start table (0.80 SLA, plan 5 points above: about 106)", Math.abs((questionsNeeded(0.85, 0.8) ?? 0) - 106) <= 1, String(questionsNeeded(0.85, 0.8)));
 check("questionsNeeded is null when the plan is not above the SLA", questionsNeeded(0.8, 0.8) === null);
 

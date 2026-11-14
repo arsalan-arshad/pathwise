@@ -1,0 +1,28 @@
+{
+  "sla": 0.82,
+  "confidence": 0.9,
+  "calibration": 100,
+  "test": 200,
+  "models": {
+    "small": "gemini-3.1-flash-lite",
+    "medium": "gemini-3.5-flash-lite"
+  },
+  "results": [
+    {
+      "name": "Always cheap",
+      "quality": 0.5415850824802437,
+      "slaMet": false,
+      "costUsd": 0.05077350000000003,
+      "costPerQueryUsd": 0.00025386750000000013,
+      "latencyP50Ms": 3616.5116670000134,
+      "latencyP95Ms": 30164.920749999932
+    }
+  ],
+  "spend": {
+    "spentUsd": 0.7524171499999998,
+    "budgetUsd": 25,
+    "realCalls": 522,
+    "mock": false,
+    "modelSet": "free"
+  }
+}

@@ -146,11 +146,22 @@ export function verdict(
         ? `routing is dearer by $${c.mean.toFixed(5)} per query (${pct(c.mean, fixed.cost)}), 95% interval [${c.lo.toFixed(5)}, ${c.hi.toFixed(5)}]`
         : `cost difference $${c.mean.toFixed(5)} per query, 95% interval [${c.lo.toFixed(5)}, ${c.hi.toFixed(5)}] includes 0`;
   const f1Words = `F1 difference ${f.mean >= 0 ? "+" : ""}${f.mean.toFixed(3)}, 95% interval [${f.lo.toFixed(3)}, ${f.hi.toFixed(3)}]`;
+  const f1Note =
+    f.hi < 0
+      ? " WARNING: routing's F1 is lower, with the 95% interval excluding 0."
+      : f.lo > 0
+        ? " Note: routing's F1 is higher, with the 95% interval excluding 0."
+        : "";
+  const caveat =
+    " SLA outcomes use the test F1 point estimate, not an interval; the fixed plan was picked from one noisy calibration sample, so its test figures, not its calibration ones, are the honest ones.";
+  if (!routing.meetsSla && !fixed.meetsSla) {
+    return `${head} neither meets the test SLA, so no winner is claimed. ${costWords}; ${f1Words}.${f1Note}${caveat}`;
+  }
   if (routing.meetsSla !== fixed.meetsSla) {
     const who = routing.meetsSla ? routing : fixed;
-    return `${head} not comparable at an equal SLA outcome: ${who.name} ${outcome(who)} the test SLA and the other misses it. ${costWords}; ${f1Words}.`;
+    return `${head} not comparable at an equal SLA outcome: ${who.name} ${outcome(who)} the test SLA and the other misses it. ${costWords}; ${f1Words}.${caveat}`;
   }
-  if (c.hi < 0) return `${head} ROUTING WINS on cost at an equal SLA outcome (both ${outcome(routing)}): ${costWords}; ${f1Words}.`;
-  if (c.lo > 0) return `${head} THE FIXED PLAN WINS on cost at an equal SLA outcome (both ${outcome(routing)}): ${costWords}; ${f1Words}. Routing does not beat the best fixed plan here.`;
-  return `${head} NO WINNER: the cost intervals overlap (both ${outcome(routing)} the SLA). ${costWords}; ${f1Words}. Routing is not shown to beat the best fixed plan.`;
+  if (c.hi < 0) return `${head} ROUTING WINS on cost at an equal SLA outcome (both ${outcome(routing)}): ${costWords}; ${f1Words}.${f1Note}${caveat}`;
+  if (c.lo > 0) return `${head} THE FIXED PLAN WINS on cost at an equal SLA outcome (both ${outcome(routing)}): ${costWords}; ${f1Words}. Routing does not beat the best fixed plan here.${f1Note}${caveat}`;
+  return `${head} NO WINNER: the cost intervals overlap (both ${outcome(routing)} the SLA). ${costWords}; ${f1Words}. Routing is not shown to beat the best fixed plan.${f1Note}${caveat}`;
 }

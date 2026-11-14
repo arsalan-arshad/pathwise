@@ -1,0 +1,111 @@
+{
+  "sla": 0.725,
+  "confidence": 0.9,
+  "calibration": 100,
+  "test": 200,
+  "models": {
+    "small": "gemini-3.1-flash-lite",
+    "medium": "gemini-3.5-flash-lite"
+  },
+  "results": [
+    {
+      "name": "Always cheap",
+      "quality": 0.5415850824802437,
+      "slaMet": false,
+      "costUsd": 0.05077350000000003,
+      "costPerQueryUsd": 0.00025386750000000013,
+      "latencyP50Ms": 3616.5116670000134,
+      "latencyP95Ms": 30164.920749999932
+    },
+    {
+      "name": "Pathwise (average-based)",
+      "quality": 0.707473610618772,
+      "slaMet": false,
+      "costUsd": 0.13135804999999998,
+      "costPerQueryUsd": 0.0006567902499999998,
+      "latencyP50Ms": 2431.6902500001015,
+      "latencyP95Ms": 21114.30199999991,
+      "calibrationCostUsd": 0.40240254999999986,
+      "calibrationRuns": 447,
+      "planMix": {
+        "model=small|thinking=low|topK=10": 51,
+        "model=medium|thinking=high|topK=10": 41,
+        "model=small|thinking=low|topK=5": 42,
+        "model=small|thinking=low|topK=2": 56,
+        "model=small|thinking=high|topK=10": 7,
+        "model=medium|thinking=low|topK=5": 3
+      },
+      "report": {
+        "strategy": "adaptive",
+        "samples": 100,
+        "seedQueries": 2,
+        "runs": 447,
+        "exhaustiveRuns": 1200,
+        "costUsd": 0.40240254999999986,
+        "shortcutQueries": 0,
+        "audits": 7,
+        "prunedPlans": [],
+        "monotonicityViolationRate": 0.4230769230769231,
+        "assumeMonotone": false,
+        "qualityThreshold": 0.725,
+        "certifiedQuality": null,
+        "slaCertified": false
+      }
+    },
+    {
+      "name": "Pathwise (guaranteed, confidence 0.9)",
+      "quality": 0.7887884314188872,
+      "slaMet": true,
+      "costUsd": 0.3289799,
+      "costPerQueryUsd": 0.0016448995,
+      "latencyP50Ms": 1750.4914170000702,
+      "latencyP95Ms": 4378.700084000127,
+      "calibrationCostUsd": 0.4040436499999998,
+      "calibrationRuns": 446,
+      "planMix": {
+        "model=medium|thinking=high|topK=10": 200
+      },
+      "report": {
+        "strategy": "adaptive",
+        "samples": 100,
+        "seedQueries": 2,
+        "runs": 446,
+        "exhaustiveRuns": 1200,
+        "costUsd": 0.4040436499999998,
+        "shortcutQueries": 0,
+        "audits": 7,
+        "prunedPlans": [],
+        "monotonicityViolationRate": 0.46153846153846156,
+        "assumeMonotone": false,
+        "qualityThreshold": 0.725,
+        "certifiedQuality": 0.264264606474353,
+        "slaCertified": false
+      }
+    },
+    {
+      "name": "Typical default",
+      "quality": 0.684841742486904,
+      "slaMet": false,
+      "costUsd": 0.08716899999999995,
+      "costPerQueryUsd": 0.00043584499999999975,
+      "latencyP50Ms": 1066.703375000041,
+      "latencyP95Ms": 2234.3572919999715
+    },
+    {
+      "name": "Always max",
+      "quality": 0.7887884314188872,
+      "slaMet": true,
+      "costUsd": 0.3289799,
+      "costPerQueryUsd": 0.0016448995,
+      "latencyP50Ms": 1750.4914170000702,
+      "latencyP95Ms": 4378.700084000127
+    }
+  ],
+  "spend": {
+    "spentUsd": 2.996054350000003,
+    "budgetUsd": 25,
+    "realCalls": 157,
+    "mock": false,
+    "modelSet": "free"
+  }
+}
