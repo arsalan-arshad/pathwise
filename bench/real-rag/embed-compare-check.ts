@@ -68,6 +68,14 @@ try {
   check("--fake: three featurizers are compared (hashed, oracle, noise)", /hashed text/.test(fake.out) && /fake oracle/.test(fake.out) && /fake noise/.test(fake.out));
   check("--fake: reports the noise control against hashed", /control: the noise embedder/.test(fake.out), fake.out.slice(-1500));
   console.log(`     (noise control line: ${(fake.out.match(/control: the noise embedder[^\n]*/) ?? ["-"])[0]})`);
+  const avgSection = (fake.out.split("-- average-based (no guarantee): ")[1] ?? "").split("-- guaranteed (confidence 0.9): ")[0];
+  const guaSection = (fake.out.split("-- guaranteed (confidence 0.9): ")[1] ?? "").split("-- test set")[0];
+  check("--fake: an average-based table exists, labelled SYNTHETIC, with all three featurizers and 'n/a' certification", /cross-validation[^\n]*SYNTHETIC/.test(avgSection) && /hashed text/.test(avgSection) && /fake oracle/.test(avgSection) && /fake noise/.test(avgSection) && /n\/a/.test(avgSection), fake.out.slice(0, 3000));
+  check("--fake: the guaranteed table is still printed, labelled, with k/5 folds", /cross-validation[^\n]*SYNTHETIC/.test(guaSection) && /\d\/5 folds/.test(guaSection), fake.out.slice(0, 3000));
+  check("--fake: the 'vs hashed' lines and the oracle-vs-noise control are printed for both tables", (avgSection.match(/ vs hashed:/g) ?? []).length === 2 && (guaSection.match(/ vs hashed:/g) ?? []).length === 2 && /control: the oracle embedder/.test(avgSection) && /control: the oracle embedder/.test(guaSection), fake.out.slice(0, 3000));
+  console.log(`     (oracle vs noise, average-based: ${(avgSection.match(/control: the oracle embedder[^\n]*/) ?? ["-"])[0]})`);
+  console.log(`     (oracle vs noise, guaranteed: ${(guaSection.match(/control: the oracle embedder[^\n]*/) ?? ["-"])[0]})`);
+  check("--fake: the certification warning appears only under the guaranteed table", !/warning: .* certified only/.test(avgSection));
   check("--fake: test is 'not measured' while the test table is incomplete, no partial numbers", /test: not measured\. 2400 of 2400 test pairs are missing/.test(fake.out));
   check("--fake: embedding calls, tokens, dimension and wall time are printed", /embed calls, \d+ texts, \d+ tokens/.test(fake.out) && /dimension \d+/.test(fake.out) && /ms to embed 300 question texts/.test(fake.out));
   check("--fake: no Gemini call", /no Gemini call was made/.test(fake.out));
@@ -87,7 +95,8 @@ try {
   const ids = ["small", "medium"].flatMap((m) => ["low", "high"].flatMap((t) => [2, 5, 10].map((k) => `model=${m}|thinking=${t}|topK=${k}`)));
   for (let i = 0; i < ids.length; i += 4) run("fill.ts", ["--phase", "test", "--plans", ids.slice(i, i + 4).join(","), "--yes-live"]);
   const full = run("embed-compare.ts", ["--fake"]);
-  check("--fake with a complete test table: test rows for every featurizer", !/test: not measured/.test(full.out) && ((full.out.split("-- test set")[1] ?? "").split("-- embedding cost")[0]).match(/hashed text|fake oracle|fake noise/g)?.length === 3, full.out.slice(-1500));
+  check("--fake with a complete test table: test rows for every featurizer", !/test: not measured/.test(full.out) && ((full.out.split("-- test set")[1] ?? "").split("-- embedding cost")[0]).match(/hashed text|fake oracle|fake noise/g)?.length === 6, full.out.slice(-1500));
+  check("--fake: test rows exist for both the average-based and the guaranteed planner", /average-based \(no guarantee\)\nfeatures/.test((full.out.split("-- test set")[1] ?? "")) && /guaranteed \(confidence 0\.9\)\nfeatures/.test((full.out.split("-- test set")[1] ?? "")));
 } finally {
   server.close();
   rmSync(dir, { recursive: true, force: true });

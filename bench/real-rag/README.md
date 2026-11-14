@@ -95,7 +95,7 @@ ollama pull nomic-embed-text      # once; 274 MB per the Ollama library page. Th
 npm run bench:rag:embed-compare -- --model nomic-embed-text      # --base-url http://localhost:11434/v1 is the default
 ```
 
-- **Calibration-only 5-fold cross-validation:** calibrate on 80 questions, serve the 20 held out, SLA guarantee at confidence 0.9, SLA = `--sla-of-max` (default 0.90) of always-max's F1. This is not the test set.
+- **Calibration-only 5-fold cross-validation, two tables:** *average-based (no guarantee)*, which always routes with the features and can miss the SLA by design, and *guaranteed (confidence 0.9)*, where a fold that cannot certify serves one safe plan. Each: calibrate on 80 questions, serve the 20 held out, SLA = `--sla-of-max` (default 0.90) of always-max's F1. This is not the test set.
 - **Test set:** shown only when the test table is complete for all 12 plans (the router may pick any); otherwise "test: not measured" with the missing count. No partial test numbers.
 - Also printed: embed calls, texts and tokens (what the server reports; Ollama's `usage` is not documented, so "none reported" is possible), vector dimension, and the wall time to embed the 300 question texts.
 - If the server or model is missing it prints the exact `ollama pull` command and exits 1.
