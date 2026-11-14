@@ -100,7 +100,7 @@ npm run bench:rag:embed-compare -- --model nomic-embed-text      # --base-url ht
 - Also printed: embed calls, texts and tokens (what the server reports; Ollama's `usage` is not documented, so "none reported" is possible), vector dimension, and the wall time to embed the 300 question texts.
 - If the server or model is missing it prints the exact `ollama pull` command and exits 1.
 - `--fake` runs with fake embedders (a difficulty-encoding oracle and pure noise) on the mock cache, every number labelled SYNTHETIC. `npm run bench:rag:embed-compare:check` covers it plus a fake local embeddings server.
-- One dataset, 100 held-out questions, one seed: small differences are noise.
+- One dataset, 100 held-out questions, one seed: small differences are noise. The SLA is derived from the same 100 questions (identically for every featurizer). A featurizer that certifies in fewer than 5 of 5 folds gets a warning: uncertified folds serve one safe plan, so that row says little about the features. A real run refuses `PATHWISE_BENCH_MOCK=1`.
 
 ## Known limits
 

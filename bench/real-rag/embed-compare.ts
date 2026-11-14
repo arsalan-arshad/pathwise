@@ -17,6 +17,10 @@
  */
 const args = process.argv.slice(2);
 const FAKE = args.includes("--fake");
+if (!FAKE && process.env.PATHWISE_BENCH_MOCK === "1") {
+  console.error("refused: PATHWISE_BENCH_MOCK=1 is set, so a real-embeddings run would read the mock cache and look real. Unset it, or use --fake.");
+  process.exit(2);
+}
 process.env.PATHWISE_BENCH_OFFLINE = "1"; // before the imports below read it: a cache miss throws, nothing is requested
 if (FAKE) process.env.PATHWISE_BENCH_MOCK = "1"; // the fake mode reads the mock cache, never the real one
 const { createPlanner, enumeratePlans, hashedTextFeaturizer, planKey } = await import("../../src/index.js");
@@ -161,9 +165,9 @@ if (FAKE) {
   } catch (err) {
     const msg = (err as Error).message;
     if (/HTTP 404|not found|try pulling/i.test(msg)) {
-      console.error(`The model "${MODEL}" is not available on ${BASE_URL}. This tool never pulls models. Run:\n  ollama pull ${MODEL}\nthen run this command again.\n(server said: ${msg.slice(0, 200)})`);
+      console.error(`The model "${MODEL}" is not available on ${BASE_URL} (or --base-url has the wrong path: it should end in /v1). This tool never pulls models. Run:\n  ollama pull ${MODEL}\nthen run this command again.\n(server said: ${msg.slice(0, 200)})`);
     } else {
-      console.error(`Could not reach an OpenAI-compatible embeddings server at ${BASE_URL} (${msg.slice(0, 200)}).\nStart Ollama (the app, or \`ollama serve\`), run \`ollama pull ${MODEL}\` once, then run this command again.`);
+      console.error(`The embeddings server at ${BASE_URL} did not answer usefully (${msg.slice(0, 200)}).\nStart Ollama (the app, or \`ollama serve\`), run \`ollama pull ${MODEL}\` once, then run this command again.`);
     }
     process.exit(1);
   }
@@ -246,7 +250,15 @@ for (const c of candidates.slice(1)) {
   console.log(`${c.name} vs hashed: ${better ? "cheaper at equal or better F1" : worse ? "dearer at equal or worse F1" : "mixed or equal (cost and F1 move in different directions, or tie)"} (F1 ${(r.f1 - h.f1 >= 0 ? "+" : "")}${(r.f1 - h.f1).toFixed(3)}, cost ${(r.cost - h.cost >= 0 ? "+" : "")}$${(r.cost - h.cost).toFixed(5)}).`);
   if (c.name.includes("noise")) console.log(`  control: the noise embedder ${better ? "BEAT hashed features (unexpected; report it)" : "did not beat hashed features, as it should not"}.`);
 }
-console.log("(100 questions, one dataset, one seed: differences of a few points are noise. Not a significance test.)");
+for (const c of candidates) {
+  const r = cv.get(c.name)!;
+  if (!r.certified.startsWith(`${FOLDS}/`)) {
+    console.log(
+      `warning: ${c.name} certified only ${r.certified}. A fold that cannot certify serves one safe plan for every request, which depends little on the features, so this row compares the featurizers only weakly (each fold calibrates on ${calibration.length - calibration.length / FOLDS} questions).`,
+    );
+  }
+}
+console.log("(100 questions, one dataset, one seed: differences of a few points are noise. Not a significance test. The SLA is derived from the same 100 questions, including each fold's held-out 20, identically for every featurizer.)");
 
 const testTable = await load(test);
 console.log(`\n-- test set (${test.length} questions)${tag}`);

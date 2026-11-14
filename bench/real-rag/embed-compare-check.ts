@@ -27,7 +27,8 @@ const run = (script: string, args: string[]) => {
 // The fake server lives in this process, so calls that talk to it must not block the event loop (spawnSync would).
 const runAsync = (script: string, args: string[]) =>
   new Promise<{ code: number | null; out: string }>((resolve) => {
-    const child = spawn("npx", ["tsx", `bench/real-rag/${script}`, ...args], { env });
+    const { PATHWISE_BENCH_MOCK: _mock, ...realEnv } = env; // real mode refuses MOCK; the temp cache dir already holds the mock answers
+    const child = spawn("npx", ["tsx", `bench/real-rag/${script}`, ...args], { env: realEnv });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
@@ -75,6 +76,8 @@ try {
 
   const real = await runAsync("embed-compare.ts", ["--model", "fake-embed", "--base-url", url]);
   check("real path against the fake local server: completes, reports tokens from usage, no SYNTHETIC banner", real.code === 0 && /fake-embed \(Ollama\): \d+ embed calls, 300 texts, 2100 tokens reported by the server, dimension 8/.test(real.out) && !/SYNTHETIC/.test(real.out), real.out.slice(-1200));
+  const refuse = run("embed-compare.ts", ["--model", "fake-embed", "--base-url", url]);
+  check("a real run refuses PATHWISE_BENCH_MOCK=1", refuse.code === 2 && /refused: PATHWISE_BENCH_MOCK=1/.test(refuse.out), refuse.out.slice(-300));
   const missing = await runAsync("embed-compare.ts", ["--model", "not-pulled", "--base-url", url]);
   check("model not pulled: exit 1, prints the exact ollama pull command, pulls nothing", missing.code === 1 && /ollama pull not-pulled/.test(missing.out), missing.out.slice(-500));
   const down = await runAsync("embed-compare.ts", ["--model", "fake-embed", "--base-url", "http://127.0.0.1:1/v1"]);
