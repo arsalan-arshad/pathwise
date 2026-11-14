@@ -91,7 +91,7 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 if (FAKE) console.log("SYNTHETIC: --fake, mock model answers and fake embedders. Nothing below is real data.");
 const cal = await load(calibration);
-console.log(`== embed-compare${tag}: ${calibration.length} calibration / ${test.length} test questions, ${plans.length} plans, 5-fold cross-validation on calibration, SLA ${Math.round(FRACTION * 100)}% of always-max, confidence ${CONFIDENCE}`);
+console.log(`== embed-compare${tag}: ${calibration.length} calibration / ${test.length} test questions, ${plans.length} plans, 5-fold cross-validation on calibration, SLA ${Math.round(FRACTION * 100)}% of always-max; two planners: average-based (no confidence) and guaranteed (confidence ${CONFIDENCE})`);
 if (cal.missing > 0) {
   console.log(`\nincomplete table: ${cal.missing} calibration pairs missing, nothing measured. Finish RUN A first: npm run bench:rag:fill -- --phase calibration --yes-live`);
   process.exit(0);
