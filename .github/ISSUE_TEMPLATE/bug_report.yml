@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in Pathwise does not work as documented.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Never paste API keys, tokens or private data** into this form (use placeholders). For a security problem, do not open an issue: see https://github.com/arsalan-arshad/pathwise/blob/main/SECURITY.md .
+  - type: input
+    id: version
+    attributes:
+      label: Pathwise version
+      description: Output of `npm ls @arsalandev/pathwise`, or the commit if you run a clone.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter used
+      options:
+        - core (createPlanner only)
+        - vercel-ai
+        - langchain
+        - openai-compatible
+        - embeddings
+        - bench scripts (bench/ or examples/)
+        - other
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: "22.x"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code that shows the problem, runnable without your private data or keys. A simulated pipeline is fine.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected vs actual
+      description: What you expected, what happened instead, and any error text.
+    validations:
+      required: true
+  - type: dropdown
+    id: data
+    attributes:
+      label: Real or synthetic data
+      description: Did the problem show up with a real pipeline or only with a simulated one?
+      options:
+        - real pipeline
+        - synthetic / simulated pipeline
+        - both
+        - not sure
+    validations:
+      required: true

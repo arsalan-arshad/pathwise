@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a change or an addition to Pathwise.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Pathwise keeps every feature measurable. Please say how yours would be measured. **Never paste API keys or private data.**
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behaviour
+      description: A code sketch of how you would like to use it.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: measure
+    attributes:
+      label: How it would be measured
+      description: The effect on cost, quality and latency, and how you would check it (a simulated workload is fine to start with; say which).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
