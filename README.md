@@ -15,6 +15,8 @@ Databases have had query optimizers for 50 years. AI pipelines don't: teams hard
 npm install @arsalandev/pathwise
 ```
 
+New here? The [quick start](docs/quickstart.md) goes from install to a planner serving traffic, and says how many calibration questions your SLA needs.
+
 Or from source: `git clone https://github.com/arsalan-arshad/pathwise && cd pathwise && npm install && npm run build`. Adapters are separate entry points
 (`@arsalandev/pathwise/vercel-ai`, `/langchain`, `/embeddings`, `/openai-compatible`); the core has zero runtime dependencies.
 
