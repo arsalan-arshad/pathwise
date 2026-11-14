@@ -38,7 +38,12 @@ async function postEmbeddings(url: string, opts: HttpOptions, body: object, who:
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.apiKey) headers.authorization = `Bearer ${opts.apiKey}`;
   const res = await f(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${who}: HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    // A server may echo the Authorization header in its error body: remove the key (6+ characters, like openai-compatible) before truncating.
+    const key = opts.apiKey && opts.apiKey.length >= 6 ? opts.apiKey : undefined;
+    const text = await res.text();
+    throw new Error(`${who}: HTTP ${res.status}: ${(key ? text.split(key).join("[redacted]") : text).slice(0, 300)}`);
+  }
   const json = await res.json();
   const data = json?.data;
   if (!Array.isArray(data)) throw new Error(`${who}: response has no data[]`);
