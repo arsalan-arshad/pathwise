@@ -9,8 +9,8 @@
  * installs a model: if the server or the model is missing it prints the `ollama pull` command and exits 1.
  *
  * What it measures, per featurizer (hashed text, then the embedding model; --fake adds an oracle and a noise embedder):
- *  - calibration-only 5-fold cross-validation: calibrate on 80 calibration questions, serve the 20 held out, with the SLA
- *    guarantee (confidence 0.9). Every pair is cached once the table is complete. This is NOT the test set.
+ *  - calibration-only 5-fold cross-validation: calibrate on 80 calibration questions, serve the 20 held out, in two tables: average-based
+ *    (no confidence: always routes with the features) and guaranteed (confidence 0.9: a fold that cannot certify serves one safe plan). Every pair is cached once the table is complete. This is NOT the test set.
  *  - the 200 test questions (calibrate on all 100, serve 200) ONLY if the test table is complete for all 12 plans, since the
  *    router may pick any of them. Otherwise "test: not measured" and the missing count. No partial test numbers.
  * SLA = --sla-of-max (default 0.90) of always-max's F1 on the calibration questions, floored to 3 decimals as run.ts does.
@@ -175,12 +175,13 @@ if (FAKE) {
 }
 
 // ------------------------------------------------------------------ measurements
-function plannerFor(c: Candidate) {
+/** guaranteed = SLA with confidence (a fold that cannot certify serves one safe plan); average-based = no confidence, always routes with the features. */
+function plannerFor(c: Candidate, guaranteed: boolean) {
   return createPlanner<Question, Answer>({
     space: SPACE,
     pipeline: ragPipeline,
     scorer,
-    sla: { minQuality: SLA, confidence: CONFIDENCE },
+    sla: guaranteed ? { minQuality: SLA, confidence: CONFIDENCE } : { minQuality: SLA },
     featurize: c.featurize,
     feedbackRate: 0,
     concurrency: 2,
@@ -195,7 +196,7 @@ interface Row {
   calRuns: number;
 }
 
-async function crossValidate(c: Candidate): Promise<Row> {
+async function crossValidate(c: Candidate, guaranteed: boolean): Promise<Row> {
   const f1: number[] = [];
   const cost: number[] = [];
   let certified = 0;
@@ -203,7 +204,7 @@ async function crossValidate(c: Candidate): Promise<Row> {
   for (let k = 0; k < FOLDS; k++) {
     const train = calibration.filter((_, i) => i % FOLDS !== k);
     const heldOut = calibration.filter((_, i) => i % FOLDS === k);
-    const planner = plannerFor(c);
+    const planner = plannerFor(c, guaranteed);
     const report = await planner.calibrate(train);
     certified += report.slaCertified ? 1 : 0;
     runs += report.runs;
@@ -213,11 +214,11 @@ async function crossValidate(c: Candidate): Promise<Row> {
       cost.push(r.costUsd);
     }
   }
-  return { f1: mean(f1), cost: mean(cost), met: mean(f1) >= SLA, certified: `${certified}/${FOLDS} folds`, calRuns: runs / FOLDS };
+  return { f1: mean(f1), cost: mean(cost), met: mean(f1) >= SLA, certified: guaranteed ? `${certified}/${FOLDS} folds` : "n/a", calRuns: runs / FOLDS };
 }
 
-async function serveTest(c: Candidate): Promise<Row> {
-  const planner = plannerFor(c);
+async function serveTest(c: Candidate, guaranteed: boolean): Promise<Row> {
+  const planner = plannerFor(c, guaranteed);
   const report = await planner.calibrate(calibration);
   const f1: number[] = [];
   const cost: number[] = [];
@@ -226,47 +227,66 @@ async function serveTest(c: Candidate): Promise<Row> {
     f1.push(scorer(q, r.output));
     cost.push(r.costUsd);
   }
-  return { f1: mean(f1), cost: mean(cost), met: mean(f1) >= SLA, certified: String(report.slaCertified), calRuns: report.runs };
+  return { f1: mean(f1), cost: mean(cost), met: mean(f1) >= SLA, certified: guaranteed ? String(report.slaCertified) : "n/a", calRuns: report.runs };
 }
 
 const row = (name: string, r: Row) =>
   `${name.padEnd(28)} ${r.f1.toFixed(3).padStart(7)}  ${r.met ? "met   " : "MISSED"}  $${r.cost.toFixed(5)}  ${r.certified.padStart(12)}  ${r.calRuns.toFixed(0).padStart(8)}`;
 const header = "features                       F1     SLA     $/query    certified    calib runs";
 
-console.log(`\n-- calibration-only ${FOLDS}-fold cross-validation (${calibration.length} held-out questions in total; NOT the test set)${tag}`);
-console.log(header);
-const cv = new Map<string, Row>();
-for (const c of candidates) {
-  const r = await crossValidate(c);
-  cv.set(c.name, r);
-  console.log(row(c.name, r));
-}
-console.log(`reference: always-max serves at ${mean(cal.cost[maxIdx]).toFixed(5)} $/query (calibration questions).`);
-const h = cv.get("hashed text")!;
-for (const c of candidates.slice(1)) {
-  const r = cv.get(c.name)!;
-  const better = r.cost < h.cost - 1e-9 && r.f1 >= h.f1 - 1e-9;
-  const worse = r.cost > h.cost + 1e-9 && r.f1 <= h.f1 + 1e-9;
-  console.log(`${c.name} vs hashed: ${better ? "cheaper at equal or better F1" : worse ? "dearer at equal or worse F1" : "mixed or equal (cost and F1 move in different directions, or tie)"} (F1 ${(r.f1 - h.f1 >= 0 ? "+" : "")}${(r.f1 - h.f1).toFixed(3)}, cost ${(r.cost - h.cost >= 0 ? "+" : "")}$${(r.cost - h.cost).toFixed(5)}).`);
-  if (c.name.includes("noise")) console.log(`  control: the noise embedder ${better ? "BEAT hashed features (unexpected; report it)" : "did not beat hashed features, as it should not"}.`);
-}
-for (const c of candidates) {
-  const r = cv.get(c.name)!;
-  if (!r.certified.startsWith(`${FOLDS}/`)) {
-    console.log(
-      `warning: ${c.name} certified only ${r.certified}. A fold that cannot certify serves one safe plan for every request, which depends little on the features, so this row compares the featurizers only weakly (each fold calibrates on ${calibration.length - calibration.length / FOLDS} questions).`,
-    );
+const signed = (x: number, d: number, p = "") => `${x >= 0 ? "+" : ""}${p}${x.toFixed(d)}`;
+const cheaperAtEqualF1 = (r: Row, base: Row) => r.cost < base.cost - 1e-9 && r.f1 >= base.f1 - 1e-9;
+
+/** One cross-validation table: every featurizer, the "vs hashed" lines, the controls and (guaranteed only) the certification warning. */
+async function cvTable(label: string, guaranteed: boolean) {
+  console.log(`\n-- ${label}: calibration-only ${FOLDS}-fold cross-validation (${calibration.length} held-out questions in total; NOT the test set)${tag}`);
+  console.log(header);
+  const cv = new Map<string, Row>();
+  for (const c of candidates) {
+    const r = await crossValidate(c, guaranteed);
+    cv.set(c.name, r);
+    console.log(row(c.name, r));
+  }
+  console.log(`reference: always-max serves at ${mean(cal.cost[maxIdx]).toFixed(5)} $/query (calibration questions).`);
+  const h = cv.get("hashed text")!;
+  for (const c of candidates.slice(1)) {
+    const r = cv.get(c.name)!;
+    const worse = r.cost > h.cost + 1e-9 && r.f1 <= h.f1 + 1e-9;
+    console.log(`${c.name} vs hashed: ${cheaperAtEqualF1(r, h) ? "cheaper at equal or better F1" : worse ? "dearer at equal or worse F1" : "mixed or equal (cost and F1 move in different directions, or tie)"} (F1 ${signed(r.f1 - h.f1, 3)}, cost ${signed(r.cost - h.cost, 5, "$")}).`);
+    if (c.name.includes("noise")) console.log(`  control: the noise embedder ${cheaperAtEqualF1(r, h) ? "BEAT hashed features (unexpected; report it)" : "did not beat hashed features, as it should not"}.`);
+  }
+  const oracle = candidates.find((c) => c.name.includes("oracle"));
+  const noise = candidates.find((c) => c.name.includes("noise"));
+  if (oracle && noise) {
+    const o = cv.get(oracle.name)!;
+    const n = cv.get(noise.name)!;
+    console.log(`  control: the oracle embedder ${cheaperAtEqualF1(o, n) ? "is cheaper than noise at equal or better F1, as expected" : o.cost > n.cost + 1e-9 && o.f1 <= n.f1 + 1e-9 ? "is WORSE than noise on cost and F1 (unexpected; report it)" : "is not cheaper than noise at equal or better F1 on these data (report it; it is a control, not a failure)"} (F1 ${signed(o.f1 - n.f1, 3)}, cost ${signed(o.cost - n.cost, 5, "$")} vs noise).`);
+  }
+  if (guaranteed) {
+    for (const c of candidates) {
+      const r = cv.get(c.name)!;
+      if (!r.certified.startsWith(`${FOLDS}/`)) {
+        console.log(
+          `warning: ${c.name} certified only ${r.certified}. A fold that cannot certify serves one safe plan for every request, which depends little on the features, so this row compares the featurizers only weakly (each fold calibrates on ${calibration.length - calibration.length / FOLDS} questions). See the average-based table, which always routes with the features.`,
+        );
+      }
+    }
   }
 }
-console.log("(100 questions, one dataset, one seed: differences of a few points are noise. Not a significance test. The SLA is derived from the same 100 questions, including each fold's held-out 20, identically for every featurizer.)");
+await cvTable("average-based (no guarantee)", false);
+await cvTable("guaranteed (confidence 0.9)", true);
+console.log("(100 questions, one dataset, one seed: differences of a few points are noise. Not a significance test. The SLA is derived from the same 100 questions, including each fold's held-out 20, identically for every featurizer. Average-based mode can miss the SLA by design: read F1 and SLA together with cost.)");
 
 const testTable = await load(test);
 console.log(`\n-- test set (${test.length} questions)${tag}`);
 if (testTable.missing > 0) {
   console.log(`test: not measured. ${testTable.missing} of ${plans.length * test.length} test pairs are missing and the router may pick any plan; no partial test numbers are shown.`);
 } else {
-  console.log(header);
-  for (const c of candidates) console.log(row(c.name, await serveTest(c)));
+  for (const [label, guaranteed] of [["average-based (no guarantee)", false], ["guaranteed (confidence 0.9)", true]] as const) {
+    console.log(`${label}`);
+    console.log(header);
+    for (const c of candidates) console.log(row(c.name, await serveTest(c, guaranteed)));
+  }
 }
 
 console.log("\n-- embedding cost");
