@@ -72,6 +72,10 @@ try {
   const strict = await run({ OLLAMA_BASE_URL: url, OLLAMA_EMBED_MODEL: "fake-embed", OLLAMA_CHAT_MODEL: "fake-chat" });
   check("reasoning_effort rejection is reported as REJECTED (not an unexpected error)", /REJECTED: .*reasoning_effort/.test(strict.out), strict.out.slice(-2500));
   check("missing chat usage: the pipeline fails loudly (an ERROR row) and the exit code says so", /usage absent/.test(strict.out) && /ERROR: .*usage/i.test(strict.out) && strict.code === 1, strict.out.slice(-2500));
+
+  cfg.rejectReasoning = false; // accepts reasoning_effort but returns no usage: must NOT be reported as a rejection
+  const noUsage = await run({ OLLAMA_BASE_URL: url, OLLAMA_EMBED_MODEL: "fake-embed", OLLAMA_CHAT_MODEL: "fake-chat" });
+  check("no chat usage with reasoning_effort accepted: not mislabelled as REJECTED", !/REJECTED/.test(noUsage.out) && /usage absent/.test(noUsage.out), noUsage.out.slice(-2500));
 } finally {
   server.close();
 }

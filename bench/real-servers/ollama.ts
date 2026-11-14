@@ -50,7 +50,15 @@ console.log(`server: ${BASE}\nembeddings model: ${EMBED_MODEL}\nchat model: ${CH
 
 // ---- embeddings
 const texts = ["What is the capital of France?", "Who wrote Hamlet?", "How many legs does a spider have?", "Name a prime number above 100.", "Where is the Eiffel Tower?"];
-const embed = openAIEmbed({ model: EMBED_MODEL, baseUrl: BASE });
+const HANG_MS = 60_000;
+/** The embeddings adapter has no timeout, so a server that stalls (e.g. loading a model) would hang this script: bound every call. */
+const bounded = <T>(p: Promise<T>): Promise<T> =>
+  Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`no answer within ${HANG_MS / 1000} s (the embeddings adapter has no timeout)`)), HANG_MS).unref())]);
+const embedWith = (extra: { dimensions?: number } = {}) => {
+  const f = openAIEmbed({ model: EMBED_MODEL, baseUrl: BASE, ...extra });
+  return (t: string[]) => bounded(f(t));
+};
+const embed = embedWith();
 const cosine = (a: number[], b: number[]) => {
   let d = 0;
   let na = 0;
@@ -88,26 +96,27 @@ await check("embeddings: dimension check in embeddingFeaturizer", async () => {
 await check("embeddings: `dimensions` option", async () => {
   const want = Math.max(2, Math.floor(dim / 2) || 64);
   try {
-    const r = await openAIEmbed({ model: EMBED_MODEL, baseUrl: BASE, dimensions: want })(["dimensions probe"]);
+    const r = await embedWith({ dimensions: want })(["dimensions probe"]);
     const got = r.vectors[0].length;
     return got === want
-      ? { result: `honored: asked ${want}, got ${got}` }
+      ? { result: `honored: asked ${want}, got ${got}`, diff: "works here, although the adapter docs say `dimensions` is only for text-embedding-3+ models" }
       : { result: `IGNORED: asked ${want}, got ${got}`, diff: "the adapter docs say `dimensions` is only for text-embedding-3+ models; here the server ignores it (silently): do not rely on it with Ollama" };
   } catch (e) {
+    if (!/HTTP 4\d\d/.test(msg(e))) throw e; // a stall or a 5xx is not a rejection of the option
     return { result: `REJECTED: ${msg(e)}`, diff: "the server rejects `dimensions`; the adapter passes it through unchanged and surfaces the error" };
   }
 });
 await check("embeddings: `usage` in the response", async () => {
   const r = await embed(["usage probe"]);
-  const raw = await fetch(`${BASE}/embeddings`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: EMBED_MODEL, input: ["usage probe"] }) });
+  const raw = await fetch(`${BASE}/embeddings`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: EMBED_MODEL, input: ["usage probe"] }), signal: AbortSignal.timeout(HANG_MS) });
   const usage = ((await raw.json()) as { usage?: unknown }).usage;
   return r.tokens === undefined
     ? { result: `no usage in the response (raw usage: ${JSON.stringify(usage) ?? "absent"}); adapter tokens undefined`, diff: "Ollama does not document `usage` for embeddings: the adapter's token counter stays 0 (docs already say 'if reported')" }
     : { result: `tokens ${r.tokens} (raw usage: ${JSON.stringify(usage)})`, diff: "usage IS present although Ollama does not document it: the token counter works" };
 });
 await check("embeddings: abort / timeout", async () => ({
-  result: "not applicable: openAIEmbed has no abort or timeout option",
-  diff: "matches the docs (they say: no retry, backoff or timeout; a hung server hangs warm())",
+  result: "not tested: openAIEmbed has no abort or timeout option to test",
+  diff: "the docs say so (no retry, backoff or timeout; a hung server hangs warm()); this script bounds its own calls at 60 s",
 }));
 
 // ---- chat
@@ -134,9 +143,10 @@ if (!CHAT_MODEL) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: CHAT_MODEL, messages: [{ role: "user", content: "Say hi" }], max_tokens: 16 }),
+      signal: AbortSignal.timeout(HANG_MS * 2),
     });
     const usage = ((await raw.json()) as { usage?: Record<string, unknown> }).usage;
-    return usage && typeof usage.prompt_tokens === "number"
+    return usage && typeof usage.prompt_tokens === "number" && typeof usage.completion_tokens === "number"
       ? { result: `usage present: ${JSON.stringify(usage)}` }
       : { result: `usage absent or incomplete: ${JSON.stringify(usage) ?? "absent"}`, diff: "the pipeline fails loudly without usage unless a `cost` callback is passed (by design)" };
   });
@@ -150,6 +160,7 @@ if (!CHAT_MODEL) {
       await build({ reasoning_effort: "low" })("Reply with the single word: pong", plan);
       return { result: "accepted (no error); whether this model honors it cannot be told from here", diff: "the adapter passes `settings` through untouched; Ollama accepted it" };
     } catch (e) {
+      if (!/HTTP 4\d\d/.test(msg(e))) throw e; // e.g. "response has no usage" is a different finding, shown as an ERROR row
       return { result: `REJECTED: ${msg(e)}`, diff: "this model/server rejects `reasoning_effort`: the plan's thinking knob must not set it for this model" };
     }
   });
