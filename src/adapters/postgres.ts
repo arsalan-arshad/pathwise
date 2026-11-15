@@ -12,7 +12,7 @@
  * What is stored is exactly `planner.exportState()` (the calibration and feedback records). `importState()` APPENDS, so load
  * into a freshly created planner (the planner recomputes profiles and thresholds from the records). Table name: letters,
  * digits and underscores only (validated, then double-quoted); the key and the state are always bound parameters, never
- * spliced into SQL. Errors from the client are rewrapped and any `postgres://` URL in their text is removed.
+ * spliced into SQL. Errors from the client are rewrapped; `postgres://` URLs and `user:password@host` fragments are removed from their text, but a bare host name or user name a driver prints on its own (e.g. getaddrinfo ENOTFOUND host) is not recognised.
  */
 import type { QueryRecord } from "../types.js";
 
@@ -47,7 +47,10 @@ const MAX_KEY = 512;
 
 function scrub(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
-  return text.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted-url]").slice(0, 300);
+  return text
+    .replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted-url]")
+    .replace(/[^\s:@/'"]+:[^\s@/'"]+@[^\s/'"]+/g, "[redacted-credentials]") // scheme-less user:password@host
+    .slice(0, 300);
 }
 
 function checkKey(key: string) {

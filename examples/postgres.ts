@@ -13,6 +13,15 @@ const check = (ok: boolean, msg: string) => {
   if (!ok) failures++;
 };
 
+/** Postgres jsonb sorts object keys by length, then bytewise: mimic it so a key-order dependence cannot hide. */
+const jsonbLike = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(jsonbLike)
+    : v && typeof v === "object"
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => [k, jsonbLike(x)]))
+      : v;
+const canon = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+
 /** Fake pg client: tables as Maps; recognises only the adapter's four statement shapes and records every call. */
 function fakeClient() {
   const tables = new Map<string, Map<string, unknown>>();
@@ -29,7 +38,7 @@ function fakeClient() {
       }
       m = /^INSERT INTO "([A-Za-z_][A-Za-z0-9_]*)" \(key, state\) VALUES \(\$1, \$2::jsonb\) ON CONFLICT \(key\) DO UPDATE SET state = EXCLUDED\.state, updated_at = now\(\)$/.exec(text);
       if (m) {
-        tables.get(m[1])!.set(params[0] as string, JSON.parse(params[1] as string)); // jsonb: stored parsed
+        tables.get(m[1])!.set(params[0] as string, jsonbLike(JSON.parse(params[1] as string))); // jsonb: stored parsed, keys reordered
         return { rows: [] };
       }
       m = /^SELECT state FROM "([A-Za-z_][A-Za-z0-9_]*)" WHERE key = \$1$/.exec(text);
@@ -62,7 +71,7 @@ await a.calibrate(samples);
   const b = mk();
   const n = await store.load("bot-1", b);
   const probe = makeQueries(40);
-  check(n === a.exportState().length && JSON.stringify(b.exportState()) === JSON.stringify(a.exportState()), "round trip: the loaded planner has exactly the saved records");
+  check(n === a.exportState().length && canon(b.exportState()) === canon(a.exportState()), "round trip: the loaded planner has exactly the saved records");
   check(JSON.stringify(probe.map((q) => planKey(a.decide(q).plan))) === JSON.stringify(probe.map((q) => planKey(b.decide(q).plan))), "round trip: the loaded planner makes the same decisions");
   // upsert
   await store.save("bot-1", mk()); // empty state replaces
@@ -99,6 +108,10 @@ await a.calibrate(samples);
   let msg = "";
   try { await store.init(); } catch (e) { msg = (e as Error).message; }
   check(/init failed/.test(msg) && !/s3cretpass|user:|db\.example\.com/.test(msg) && /\[redacted-url\]/.test(msg), "a client error with a postgres:// URL is rewrapped and the URL is removed");
+  f.fail(new Error("password authentication failed; tried alice:hunter2secret@10.0.0.5:5432 and 'postgresql://bob:pw99@h/db'"));
+  let m2 = "";
+  try { await store.init(); } catch (e) { m2 = (e as Error).message; }
+  check(!/hunter2secret|alice:|pw99|bob:/.test(m2), "a scheme-less user:password@host and a quoted URL are removed too");
   f.fail(undefined);
 }
 // corrupt stored state

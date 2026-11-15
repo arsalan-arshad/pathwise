@@ -235,7 +235,7 @@ await store.init(); await store.save("support-bot", planner);    // upsert plann
 await store.load("support-bot", freshPlanner);                   // imports it into a new planner; undefined if the key is missing
 ```
 
-The key and the state are bound parameters, errors never contain a `postgres://` URL, and `importState()` appends, so load into a fresh planner. Tested with an in-memory fake client only (`npm run bench:postgres`, SYNTHETIC); the real round trip is `npm run smoke:postgres` (you run it with your own `DATABASE_URL`; not run yet).
+The key and the state are bound parameters, `postgres://` URLs and `user:password@host` fragments are removed from error text (a bare host name a driver prints on its own is not), and `importState()` appends, so load into a fresh planner. Tested with an in-memory fake client only (`npm run bench:postgres`, SYNTHETIC); the real round trip is `npm run smoke:postgres` (you run it with your own `DATABASE_URL`; not run yet).
 
 ## Demo
 

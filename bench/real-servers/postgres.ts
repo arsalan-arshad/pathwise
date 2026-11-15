@@ -28,8 +28,22 @@ try {
   process.exit(0);
 }
 const Client = (pgModule.Client ?? pgModule.default?.Client) as new (o: { connectionString: string }) => PgLikeClient & { connect(): Promise<void>; end(): Promise<void> };
-const scrub = (e: unknown) => String(e instanceof Error ? e.message : e).split(url).join("[url]").replace(/postgres(?:ql)?:\/\/\S+/gi, "[url]").slice(0, 300);
+const secrets = (() => {
+  try {
+    const u = new URL(url);
+    return [url, u.hostname, decodeURIComponent(u.username), decodeURIComponent(u.password), u.password, u.username].filter((x) => x.length >= 3);
+  } catch {
+    return [url];
+  }
+})();
+const scrub = (e: unknown) => {
+  let t = String(e instanceof Error ? e.message : e).replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[url]");
+  for (const x of secrets) t = t.split(x).join("[hidden]"); // the URL, host, user name and password, wherever a driver echoes them
+  return t.slice(0, 300);
+};
 
+/** JSON with keys sorted, so the comparison ignores key order (Postgres jsonb reorders keys). */
+const canon = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
 const table = `pathwise_smoke_${Math.random().toString(36).slice(2, 10)}`;
 const rows: Array<[string, string, string]> = [];
 const client = new Client({ connectionString: url });
@@ -52,7 +66,7 @@ try {
   const q = planner();
   let n: number | undefined;
   await t("load", async () => (n = await store.load("smoke", q)))();
-  const same = n === saved.length && JSON.stringify(q.exportState()) === JSON.stringify(saved);
+  const same = n === saved.length && canon(q.exportState()) === canon(saved); // jsonb does not keep key order
   rows.push(["loaded state equals saved state", same ? "ok" : "FAIL", `${saved.length} records`]);
   if (!same) failed = true;
   const missing = await store.load("does-not-exist", planner());
