@@ -5,6 +5,23 @@ All notable changes to `@arsalandev/pathwise`. Format follows [Keep a Changelog]
 Every number here is labelled **real** (measured on a real pipeline), **synthetic** (a simulated workload), or **not
 measured**. Synthetic numbers show that the mechanism works; they are not a forecast of your savings.
 
+## [Unreleased]
+
+### Measured on real data (Nov 15, 2026)
+Same setup as above (HotpotQA dev, BM25, two Gemini free-tier models at list prices, 12 plans, 100 calibration and 200 test questions, one seed, one sample per pair), now with the full calibration table.
+- **A single fixed plan beat Pathwise's routing on this data.** Best fixed plan chosen on calibration only (small, top-k 10, thinking low): test F1 0.756 at $0.00055 per query, meets 0.725. Always-max: F1 0.789 at $0.00164. Pathwise average-based: F1 0.707 at $0.00066 (missed). Guaranteed mode fell back to always-max ($0.00164); the fixed plan was cheaper by $0.00110 per query (95% bootstrap interval 0.00097 to 0.00123).
+- **Real embeddings made no difference.** Local `nomic-embed-text` vs hashed text features, calibration-only cross-validation: F1 0.654 vs 0.653 at $0.00051 per query. Test set not measured.
+- Not certifiable at 100 questions: the fixed plan's 90% lower bound is 0.678 against a 0.725 target.
+- One dataset, one provider, one seed. Other datasets and pipelines are not measured. Supersedes the 0.1.0 lines "Not shown: that routing beats the best single fixed plan" and "Not measured: the real-data effect of real embeddings".
+
+### Added
+- Issue forms and `SECURITY.md` (private vulnerability reporting), `permissions: contents: read` for CI.
+- Quick start (`docs/quickstart.md`) with a calibration-size table (computed, not measured).
+- Benchmark tools: `bench:rag:fill` (live, free Gemini models only), `bench:rag:analyze` (best fixed plan vs routing, offline), `bench:rag:embed-compare` (local Ollama embeddings vs hashed features), `smoke:ollama` (written; NOT run against a real server yet).
+
+### Security
+- `openAIEmbed` and `voyageEmbed` remove the configured API key (6+ characters) from HTTP error text, as `pathwise/openai-compatible` does.
+
 ## [0.1.0] - 2026-11-13
 
 First public release.
