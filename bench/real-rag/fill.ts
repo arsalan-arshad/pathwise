@@ -5,6 +5,9 @@
  *   npm run bench:rag:fill -- --phase calibration                       dry run: what is missing, no call
  *   npm run bench:rag:fill -- --phase calibration --yes-live            fill every missing calibration pair
  *   npm run bench:rag:fill -- --phase test --plans <id>[,<id>] [--yes-live]   fill ONLY the named plans on the test set
+ *   npm run bench:rag:fill -- --phase sample --plans <id>[,<id>] --n <N> [--dataset hotpot|musique] [--yes-live]
+ *       fill ONLY the named plans on the first N questions of a seeded sample of that dataset (the way to measure a new
+ *       dataset cheaply; --dataset musique needs a LOCAL file, see musique.ts: this tool never downloads it)
  *
  * Plan ids are the ones table.ts prints (e.g. model=small|thinking=low|topK=5). Test pairs are never filled for a
  * plan you did not name, so nothing is chosen using test results. At most 4 plans per invocation.
@@ -21,6 +24,8 @@
 import { enumeratePlans, planKey, type Plan } from "../../src/index.js";
 import { BUDGET_USD, DEFAULT_RPM, MODEL_SET, MODELS, SPACE, type Tier } from "./config.js";
 import { loadHotpot, sample, type Question } from "./dataset.js";
+import { parseDataset, questionsFor } from "./questions.js";
+import { musiqueFile } from "./musique.js";
 import { BudgetExceeded, DailyQuotaError, ModelUnavailableError, QuotaError, peekCache, setRpm, spendSoFar, stopAll } from "./gemini.js";
 import { buildPrompt, ragPipeline } from "./pipeline.js";
 
@@ -48,7 +53,14 @@ const num = (name: string, def: number) => {
 };
 
 const phase = opt("phase");
-if (phase !== "calibration" && phase !== "test") fail("--phase calibration|test is required");
+if (phase !== "calibration" && phase !== "test" && phase !== "sample") fail("--phase calibration|test|sample is required");
+let dataset: "hotpot" | "musique" = "hotpot";
+try {
+  dataset = parseDataset(opt("dataset"));
+} catch (e) {
+  fail((e as Error).message);
+}
+if (dataset === "musique" && phase !== "sample") fail("--dataset musique is only for --phase sample (calibration and test are the HotpotQA splits).");
 const live = flag("yes-live");
 const progressEvery = Math.round(num("progress", 25));
 const planIds = opt("plans")
@@ -56,10 +68,16 @@ const planIds = opt("plans")
   .map((s) => s.trim())
   .filter(Boolean);
 
-if (phase === "test" && (!planIds || planIds.length === 0)) {
-  fail("--phase test needs --plans <id>[,<id>]: test pairs are filled only for plans chosen on the calibration set (see bench:rag:analyze).");
+if ((phase === "test" || phase === "sample") && (!planIds || planIds.length === 0)) {
+  fail(`--phase ${phase} needs --plans <id>[,<id>]: pairs are filled only for the plans you name (for test: plans chosen on the calibration set, see bench:rag:analyze).`);
 }
-if (phase === "calibration" && planIds) fail("--plans is for --phase test only; calibration fills every missing pair.");
+if (phase === "calibration" && planIds) fail("--plans is for --phase test|sample only; calibration fills every missing pair.");
+if (phase === "sample" && opt("n") === undefined) fail("--phase sample needs --n <N> (how many questions of the seeded sample).");
+if (phase !== "sample" && opt("n") !== undefined) fail("--n is for --phase sample only.");
+if (phase === "sample" && dataset === "hotpot" && Number(opt("n")) > num("calibration", 100)) {
+  fail(`--phase sample on hotpot is limited to the calibration size (${num("calibration", 100)}): larger samples would reach the test questions, which are filled only with --phase test for plans chosen on calibration.`);
+}
+if (phase !== "sample" && opt("dataset") !== undefined && dataset !== "hotpot") fail("--dataset is only for --phase sample.");
 if (planIds && planIds.length > MAX_PLANS_PER_TEST_FILL) fail(`at most ${MAX_PLANS_PER_TEST_FILL} plans per invocation (got ${planIds.length}).`);
 if (live && process.env.PATHWISE_BENCH_OFFLINE === "1") fail("--yes-live cannot be combined with PATHWISE_BENCH_OFFLINE=1.");
 if (MODEL_SET !== "free") fail("only the free model set is allowed (unset PATHWISE_BENCH_MODELS).");
@@ -81,11 +99,19 @@ if (planIds) {
 }
 
 const { existsSync } = await import("node:fs");
-if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url))) {
+if (dataset === "musique") {
+  if (!existsSync(musiqueFile(opt("musique-file")))) fail(`the MuSiQue file is not there (${musiqueFile(opt("musique-file"))}). This tool never downloads it: get it with the MuSiQue repo's download_data.sh (CC BY 4.0) and copy musique_ans_v1.0_dev.jsonl there, or set PATHWISE_MUSIQUE_FILE.`);
+} else if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url))) {
   fail("the dataset is not downloaded (bench/real-rag/data/). Run `npm run bench:rag:pilot` once to download it; this tool does not.");
 }
-const { calibration, test } = sample(await loadHotpot(), num("calibration", 100), num("test", 200), num("seed", 7));
-const questions = phase === "calibration" ? calibration : test;
+let questions: Question[];
+if (phase === "sample") {
+  questions = await questionsFor(dataset, { n: Math.round(num("n", 0)), seed: num("seed", 7), musiqueFile: opt("musique-file") });
+  console.log(`dataset ${dataset}: ${questions.length} questions in the sample (the file/dataset is loaded; its total size is not claimed here)`);
+} else {
+  const { calibration, test } = sample(await loadHotpot(), num("calibration", 100), num("test", 200), num("seed", 7));
+  questions = phase === "calibration" ? calibration : test;
+}
 
 interface Pair {
   q: Question;

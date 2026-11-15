@@ -124,9 +124,9 @@ async function fetchPage(offset: number): Promise<{ total: number; examples: Hot
   }
 }
 
-/** Deterministic shuffle, then disjoint calibration and test slices. */
-export function sample(all: HotpotExample[], calibration: number, test: number, seed = 7) {
-  const idx = all.map((_, i) => i);
+/** Deterministic (seeded) permutation of 0..n-1; the same one sample() has always used. */
+export function shuffleIndices(n: number, seed = 7): number[] {
+  const idx = Array.from({ length: n }, (_, i) => i);
   let s = seed;
   const rand = () => {
     s = (s + 0x6d2b79f5) | 0;
@@ -138,6 +138,12 @@ export function sample(all: HotpotExample[], calibration: number, test: number, 
     const j = Math.floor(rand() * (i + 1));
     [idx[i], idx[j]] = [idx[j], idx[i]];
   }
+  return idx;
+}
+
+/** Deterministic shuffle, then disjoint calibration and test slices. */
+export function sample(all: HotpotExample[], calibration: number, test: number, seed = 7) {
+  const idx = shuffleIndices(all.length, seed);
   if (calibration + test > idx.length) throw new Error("Not enough questions");
   const toQ = (e: HotpotExample): Question => ({
     id: e._id,
