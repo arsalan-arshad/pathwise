@@ -136,3 +136,26 @@ export interface CalibrationReport {
   /** The plan key used for every request when policy is "safe-plan" (sla.fallbackPlan if set). */
   fixedPlan?: string;
 }
+
+/** Result of planner.recommend(): one plan for every request, or none. */
+export interface Recommendation {
+  plan: Plan;
+  planKey: string;
+  /** Mean quality of the plan over the samples it was measured on (all samples drawn, same for every surviving plan). */
+  meanQuality: number;
+  /** Wilson lower bound of meanQuality at `confidence`. */
+  lowerBound: number;
+  /** lowerBound >= sla.minQuality. False means the plan meets the SLA only on the observed mean. */
+  certified: boolean;
+  confidence: number;
+  /** Mean dollar cost of one run of this plan over the samples. */
+  costPerRunUsd: number;
+  /** (sample, plan) runs made. */
+  callsUsed: number;
+  /** Runs a full table would have needed over the samples actually drawn (plans x samplesUsed, not plans x all samples). */
+  fullTableCalls: number;
+  samplesUsed: number;
+  /** "full-table": no plan was eliminated before the end; "racing": some plans were dropped early. */
+  basis: "full-table" | "racing";
+  warnings: string[];
+}
