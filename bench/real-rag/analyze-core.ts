@@ -46,7 +46,7 @@ export function chooseFixed(cal: Table, maxPlan: string, fraction: number): Fixe
   return best!;
 }
 
-function mulberry32(seed: number) {
+export function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
