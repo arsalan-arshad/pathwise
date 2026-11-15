@@ -93,6 +93,15 @@ The guarantee costs money when evidence is thin and gets cheaper with more calib
 Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 runs;
 the average-based mode missed 45. Real pipelines will differ.
 
+## Recommend one plan (`planner.recommend()`)
+
+```ts
+const rec = await planner.recommend(samples);   // races the plans on the same questions, drops bad ones early
+// rec?.plan, rec?.meanQuality, rec?.lowerBound, rec?.certified, rec?.callsUsed vs rec?.fullTableCalls, rec?.warnings
+```
+
+It returns the cheapest plan whose mean quality meets `sla.minQuality`, or `undefined` (never an invented plan). `certified` is true only when the Wilson lower bound clears the SLA, which at 100 questions it rarely does for a plan close to the bar. It does not change `decide()`. Racing and configuration search are published prior art, not a new method. On the real HotpotQA calibration table (100 questions, 12 plans, one seed, in-sample, offline: `npm run bench:rag:recommend`) it returned the full-table plan in 195 of 200 question orders at the 0.725 SLA (196 of 200 at 0.687) using about 37 to 39% fewer runs (760 and 729 of 1,200 on average), and was certified in 0 of 200 and 2 of 200. The saving comes from dropping bad plans early, not from stopping early.
+
 ## First result on real data
 
 Everything above is simulated. This is one run on a real pipeline (`npm run bench:rag`, details in

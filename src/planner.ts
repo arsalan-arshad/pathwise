@@ -1,5 +1,7 @@
 import { cosine, hashedTextFeaturizer } from "./features.js";
+import { recommendPlan, type RecommendOptions } from "./recommend.js";
 import { enumeratePlans, planKey } from "./space.js";
+import { normalQuantile, wilsonLower } from "./stats.js";
 import type {
   CalibrationReport,
   Decision,
@@ -10,6 +12,7 @@ import type {
   Plan,
   PlanEstimate,
   QueryRecord,
+  Recommendation,
   RunResult,
   Scorer,
   SLA,
@@ -278,6 +281,41 @@ export class Planner<I, O> {
         support: w,
       };
     });
+  }
+
+  /**
+   * Recommends ONE plan for every request: the cheapest plan whose mean quality meets `sla.minQuality` on `samples`,
+   * found by racing (successive elimination) instead of running every plan on every sample. Prior art exists (best-arm
+   * identification, configuration search); this is a pragmatic use of it, not a new method.
+   *
+   * Unlike calibrate(), every surviving plan is measured on the SAME questions, so a plan's mean is not biased by being
+   * measured only where cheaper plans failed. Does not change decide() or the learned state. Returns undefined when no
+   * measured plan meets the SLA (never an invented plan). `certified` is true only when the Wilson lower bound of the
+   * chosen plan's mean quality at `confidence` (default sla.confidence, else 0.9) meets sla.minQuality: with a few
+   * dozen samples that is rare when the plan is only a little above the SLA.
+   */
+  async recommend(samples: I[], options: RecommendOptions = {}): Promise<Recommendation | undefined> {
+    const confidence = options.confidence ?? this.opts.sla.confidence ?? 0.9;
+    const result = await recommendPlan<I>({
+      plans: this.plans,
+      samples,
+      minQuality: this.opts.sla.minQuality,
+      confidence,
+      options,
+      concurrency: this.opts.concurrency,
+      evaluate: async (input, plan) => {
+        const r = await this.opts.pipeline(input, plan);
+        const quality = clamp01(await this.opts.scorer(input, r.output));
+        this.stats.scorerCalls++;
+        this.stats.calibrationRuns++;
+        this.stats.calibrationCostUsd += r.costUsd;
+        return { quality, costUsd: r.costUsd };
+      },
+    });
+    if (result && this.opts.scorerErrorRate > 0) {
+      result.warnings.push("scorerErrorRate is set but recommend() does not correct for it: the quality estimates are the raw judge scores.");
+    }
+    return result;
   }
 
   /**
@@ -760,35 +798,6 @@ async function runWithConcurrency(jobs: Array<() => Promise<void>>, limit: numbe
     }
   });
   await Promise.all(workers);
-}
-
-/** Wilson score lower bound for a mean in [0, 1] observed over n trials (conservative for graded scores). */
-function wilsonLower(mean: number, n: number, z: number): number {
-  if (n === 0) return 0;
-  const z2 = z * z;
-  const centre = mean + z2 / (2 * n);
-  const margin = z * Math.sqrt((mean * (1 - mean)) / n + z2 / (4 * n * n));
-  return (centre - margin) / (1 + z2 / n);
-}
-
-/** One-sided standard normal quantile (Acklam's rational approximation, |error| < 1.2e-9). */
-function normalQuantile(p: number): number {
-  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
-  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
-  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
-  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
-  const lo = 0.02425;
-  if (p < lo) {
-    const q = Math.sqrt(-2 * Math.log(p));
-    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
-  }
-  if (p > 1 - lo) {
-    const q = Math.sqrt(-2 * Math.log(1 - p));
-    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
-  }
-  const q = p - 0.5;
-  const r = q * q;
-  return ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
 }
 
 function clamp01(x: number): number {
