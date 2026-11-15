@@ -74,6 +74,9 @@ if ((phase === "test" || phase === "sample") && (!planIds || planIds.length === 
 if (phase === "calibration" && planIds) fail("--plans is for --phase test|sample only; calibration fills every missing pair.");
 if (phase === "sample" && opt("n") === undefined) fail("--phase sample needs --n <N> (how many questions of the seeded sample).");
 if (phase !== "sample" && opt("n") !== undefined) fail("--n is for --phase sample only.");
+if (phase === "sample" && dataset === "hotpot" && Number(opt("n")) > num("calibration", 100)) {
+  fail(`--phase sample on hotpot is limited to the calibration size (${num("calibration", 100)}): larger samples would reach the test questions, which are filled only with --phase test for plans chosen on calibration.`);
+}
 if (phase !== "sample" && opt("dataset") !== undefined && dataset !== "hotpot") fail("--dataset is only for --phase sample.");
 if (planIds && planIds.length > MAX_PLANS_PER_TEST_FILL) fail(`at most ${MAX_PLANS_PER_TEST_FILL} plans per invocation (got ${planIds.length}).`);
 if (live && process.env.PATHWISE_BENCH_OFFLINE === "1") fail("--yes-live cannot be combined with PATHWISE_BENCH_OFFLINE=1.");

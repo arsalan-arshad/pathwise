@@ -35,7 +35,11 @@ try {
 const cheapId = opt("cheap") ?? planKey(BASELINES.cheap);
 const maxId = opt("max") ?? planKey(BASELINES.max);
 const K = num("k", 15);
-const { enumeratePlans, } = await import("../../src/index.js");
+if (!Number.isInteger(K) || K < 1 || (opt("n") !== undefined && !(num("n", 0) > 0))) {
+  console.error("--k must be a positive integer and --n a positive number.");
+  process.exit(2);
+}
+const { enumeratePlans } = await import("../../src/index.js");
 const { SPACE } = await import("./config.js");
 const byId = new Map(enumeratePlans(SPACE).map((p) => [planKey(p), p]));
 for (const id of [cheapId, maxId]) if (!byId.has(id)) {

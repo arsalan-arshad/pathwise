@@ -68,6 +68,7 @@ if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url)
       run("fill.ts", ["--phase", "sample", "--n", "10", "--plans", "a,b,c,d,e"]),
       run("fill.ts", ["--phase", "calibration", "--dataset", "musique"]),
     ].every((r) => r.code === 2 && /refused/.test(r.out)));
+    check("fill: hotpot --phase sample beyond the calibration size is refused (it would reach the test questions)", run("fill.ts", ["--phase", "sample", "--n", "150", "--plans", cheap]).code === 2);
     check("fill refuses the paid models and --yes-live with OFFLINE", run("fill.ts", ["--phase", "sample", "--n", "5", "--plans", cheap, "--yes-live"], { ...env, PATHWISE_BENCH_OFFLINE: "1" }).code === 2 && run("fill.ts", ["--phase", "sample", "--n", "5", "--plans", cheap], { ...env, PATHWISE_BENCH_MODELS: "paid" }).code === 2);
     const nofile = run("fill.ts", ["--phase", "sample", "--dataset", "musique", "--n", "5", "--plans", cheap], { ...env, PATHWISE_MUSIQUE_FILE: join(dir, "missing.jsonl") });
     check("musique file missing: refuses, says it never downloads", nofile.code === 2 && /never downloads/.test(nofile.out), nofile.out.slice(-300));
