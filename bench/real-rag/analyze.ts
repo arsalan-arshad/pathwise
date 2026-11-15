@@ -22,7 +22,7 @@ const core = await import("./analyze-core.js");
 type Question = import("./dataset.js").Question;
 type Answer = import("./pipeline.js").Answer;
 
-const { existsSync } = await import("node:fs");
+const { existsSync, readdirSync, readFileSync } = await import("node:fs");
 if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url))) {
   console.error("The dataset is not downloaded (bench/real-rag/data/). This tool never uses the network: run `npm run bench:rag:pilot` once to download it.");
   process.exit(1);
@@ -35,6 +35,7 @@ const num = (name: string, def: number) => {
 const CAL = num("calibration", 100);
 const TEST = num("test", 200);
 const SEED = num("seed", 7);
+const CONCURRENCY = num("concurrency", 2); // run.ts default; the order of calls can change early stops, so it is a flag
 const { calibration, test } = sample(await loadHotpot(), CAL, TEST, SEED);
 const plans = enumeratePlans(SPACE);
 const ids = plans.map((p) => planKey(p));
@@ -106,7 +107,11 @@ interface Replay {
   calCost: number;
   certified?: boolean;
 }
-async function replay(name: string, confidence: number | undefined): Promise<Replay | string> {
+interface NotReplayed {
+  name: string;
+  reason: string;
+}
+async function replay(name: string, confidence: number | undefined): Promise<Replay | NotReplayed> {
   const featurize = hashedTextFeaturizer();
   const planner = createPlanner<Question, Answer>({
     space: SPACE,
@@ -115,7 +120,7 @@ async function replay(name: string, confidence: number | undefined): Promise<Rep
     sla: confidence === undefined ? { minQuality: sla95 } : { minQuality: sla95, confidence },
     featurize: (q) => featurize(q.question),
     feedbackRate: 0,
-    concurrency: 2,
+    concurrency: CONCURRENCY,
   });
   try {
     const report = await planner.calibrate(calibration);
@@ -129,11 +134,52 @@ async function replay(name: string, confidence: number | undefined): Promise<Rep
     return { name, f1, cost, calRuns: report.runs, calCost: report.costUsd, certified: confidence === undefined ? undefined : report.slaCertified };
   } catch (err) {
     if (!(err instanceof OfflineMiss)) throw err;
-    return `not measured: the replay needs a response that is not cached (${err.message})`;
+    return { name, reason: `not measured: the replay needs a response that is not cached (${err.message})` };
   }
 }
+
+/** Aggregates of a recorded real run (bench/real-rag/results/*.json) whose SLA and sizes match this analysis. Never replayed. */
+interface Recorded {
+  file: string;
+  quality: number;
+  costPerQueryUsd: number;
+  slaMet: boolean;
+  calibrationRuns?: number;
+  certified?: boolean;
+  perQuestion?: { f1: number[]; cost: number[] };
+}
+function findRecorded(strategy: string, sla: number): Recorded | undefined {
+  const dir = process.env.PATHWISE_BENCH_RESULTS_DIR ?? new URL("./results/", import.meta.url).pathname;
+  if (!existsSync(dir)) return undefined;
+  const files = readdirSync(dir).filter((f) => /^run-.*\.json$/.test(f)).sort().reverse(); // names carry the timestamp: newest first
+  for (const f of files) {
+    try {
+      const d = JSON.parse(readFileSync(`${dir}/${f}`, "utf8")) as { sla?: number; calibration?: number; test?: number; results?: Array<Record<string, unknown>> };
+      if (d.sla === undefined || Math.abs(d.sla - sla) > 1e-9 || d.calibration !== calibration.length || d.test !== test.length) continue;
+      const r = d.results?.find((x) => x.name === strategy);
+      if (!r || typeof r.quality !== "number" || typeof r.costPerQueryUsd !== "number") continue;
+      const rep = r.report as { slaCertified?: boolean } | undefined;
+      return {
+        file: f,
+        quality: r.quality,
+        costPerQueryUsd: r.costPerQueryUsd,
+        slaMet: r.quality >= sla,
+        calibrationRuns: typeof r.calibrationRuns === "number" ? r.calibrationRuns : undefined,
+        certified: rep?.slaCertified,
+        perQuestion: (() => {
+          const pq = r.perQuestion as { f1?: unknown; costUsd?: unknown } | undefined;
+          const ok = (x: unknown): x is number[] => Array.isArray(x) && x.length === test.length && x.every((v) => typeof v === "number");
+          return pq && ok(pq.f1) && ok(pq.costUsd) ? { f1: pq.f1, cost: pq.costUsd } : undefined;
+        })(),
+      };
+    } catch {
+      continue; // an unreadable result file is skipped, not fatal
+    }
+  }
+  return undefined;
+}
 // Replayed only when a chosen plan's test pairs are cached, so a missing test table costs no compute.
-let replayed: (Replay | string)[] | undefined;
+let replayed: (Replay | NotReplayed)[] | undefined;
 const getReplays = async () => (replayed ??= [await replay("Pathwise (average-based)", undefined), await replay("Pathwise (guaranteed, confidence 0.9)", 0.9)]);
 
 let needFill = false;
@@ -160,8 +206,38 @@ for (const c of fixedByFraction) {
   console.log(`test (${test.length} q): F1 ${fmt(fixedMean)}, ${usd(core.meanOf(fixedCost))}/query, SLA ${fixedMean >= c.sla ? "met" : "MISSED"}`);
   if (c.fraction !== 0.95) continue;
   for (const r of await getReplays()) {
-    if (typeof r === "string") {
-      console.log(`${r}`);
+    if ("reason" in r) {
+      console.log(r.reason);
+      const rec = findRecorded(r.name, c.sla);
+      if (!rec) {
+        console.log(`${r.name}: no recorded real run with SLA ${c.sla}, ${calibration.length} calibration and ${test.length} test questions was found in bench/real-rag/results/.`);
+        continue;
+      }
+      const recF1 = rec.quality;
+      console.log(
+        `${r.name}: recorded real run, not replayed${rec.perQuestion ? "" : ", no paired interval"} (${rec.file}): test F1 ${fmt(recF1)}, ${usd(rec.costPerQueryUsd)}/query, SLA ${rec.slaMet ? "met" : "MISSED"}` +
+          (rec.calibrationRuns === undefined ? "" : `; calibration ${rec.calibrationRuns} runs`) +
+          (rec.certified === undefined ? "" : `, certified ${rec.certified}`) +
+          (rec.perQuestion ? ". This file stores per-question results, so the interval below is paired." : ". A paired bootstrap needs per-question data, which this file does not store (runs of run.ts before T-017 do not); point estimates only."),
+      );
+      if (rec.perQuestion) {
+        const diff = core.pairedBootstrap(rec.perQuestion, { f1: fixedF1, cost: fixedCost });
+        console.log(
+          core.verdict(
+            { name: `${r.name} (recorded)`, f1: recF1, cost: rec.costPerQueryUsd, meetsSla: rec.slaMet },
+            { name: c.plan, f1: fixedMean, cost: core.meanOf(fixedCost), meetsSla: fixedMean >= c.sla },
+            diff,
+            { sla: c.sla, calibration: calibration.length },
+          ),
+        );
+        continue;
+      }
+      const dearer = rec.costPerQueryUsd - core.meanOf(fixedCost);
+      console.log(
+        `point estimates, recorded ${r.name} vs fixed plan ${c.plan}: SLA ${rec.slaMet ? "met" : "MISSED"} vs ${fixedMean >= c.sla ? "met" : "MISSED"}; ` +
+          `cost ${usd(rec.costPerQueryUsd)} vs ${usd(core.meanOf(fixedCost))}/query (${dearer > 0 ? `the fixed plan is ${usd(dearer)} cheaper` : `routing is ${usd(-dearer)} cheaper`}); ` +
+          `F1 ${fmt(recF1)} vs ${fmt(fixedMean)}. No interval, so no winner is declared (one dataset, one provider, one seed).`,
+      );
       continue;
     }
     const rf1 = core.meanOf(r.f1);
