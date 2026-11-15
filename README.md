@@ -226,6 +226,17 @@ The key comes only from the `apiKey` option (never the environment), goes only i
 
 **What was tested:** a local fake server on 127.0.0.1 (real HTTP round trips, no external network, `npm run bench:openai-compatible`): normal response, reasoning usage, missing usage, 429 then success, 500 exhausted, timeout, abort, bad JSON, key scrubbing, and a full calibrate/run loop. **No live provider was called.** Synthetic overhead on localhost: the adapter is not measurable against a bare `fetch` round trip (about 0.1 ms per call; the difference between runs is smaller than the run-to-run noise), `decide()` about 0.08 ms.
 
+## Save learned data in Postgres (`pathwise/postgres`)
+
+```ts
+import { postgresStore } from "@arsalandev/pathwise/postgres";   // you pass in a pg Pool/Client: no `pg` dependency here
+const store = postgresStore({ client: pool });                   // table "pathwise_state" (name validated)
+await store.init(); await store.save("support-bot", planner);    // upsert planner.exportState()
+await store.load("support-bot", freshPlanner);                   // imports it into a new planner; undefined if the key is missing
+```
+
+The key and the state are bound parameters, errors never contain a `postgres://` URL, and `importState()` appends, so load into a fresh planner. Tested with an in-memory fake client only (`npm run bench:postgres`, SYNTHETIC); the real round trip is `npm run smoke:postgres` (you run it with your own `DATABASE_URL`; not run yet).
+
 ## Demo
 
 ```bash
