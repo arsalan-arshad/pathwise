@@ -158,7 +158,7 @@ the cache never evicts; exported planner state holds the vectors but not the emb
 `voyageEmbed` calls Voyage. Zero dependencies, plain `fetch`. `featurize.stats` (a snapshot: `calls`, `texts`, `tokens`, `cacheHits`, `misses`) measures the
 embedding cost: tokens x price (checked Nov 13, 2026: OpenAI text-embedding-3-small $0.02 per 1M tokens, Voyage voyage-4-lite $0.02 per 1M).
 
-**Real-data effect: NOT measured yet.** Synthetic only (`npm run bench:embeddings`, fake embedders, messy workload, SLA 0.9, 8 seeds, 90 calibration samples):
+**Real-data effect:** On HotpotQA with a local `nomic-embed-text` it made no measurable difference to routing (see 'First result on real data'); other datasets are not measured. The table below is synthetic only (`npm run bench:embeddings`, fake embedders, messy workload, SLA 0.9, 8 seeds, 90 calibration samples):
 
 | Features | SLA misses (mean / guaranteed) | Production cost (mean / guaranteed) | Calibration runs |
 |---|---|---|---|
