@@ -4,7 +4,7 @@
  *   npm run bench:rag:analyze:check
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chooseFixed, pairedBootstrap, questionsNeeded, verdict, type Table } from "./analyze-core.js";
@@ -82,6 +82,34 @@ if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url)
     check("full calibration, no test pairs: chooses on calibration and says test not measured", calOnly.code === 0 && /best fixed plan \(chosen on calibration only\)/.test(calOnly.out) && /test not measured: fill needs 200 calls for plan/.test(calOnly.out), calOnly.out.slice(-600));
     check("...and prints the fill command", /bench:rag:fill -- --phase test --plans/.test(calOnly.out));
     check("...and never prints a verdict or test F1 without test pairs", !/NO WINNER|ROUTING WINS|FIXED PLAN WINS/.test(calOnly.out));
+    // Fallback path: the chosen plan's test pairs are cached but the replay needs others -> recorded rows from a SYNTHETIC result file.
+    const chosen = (calOnly.out.match(/--plans "([^"]+)"/) ?? [])[1];
+    const sla = Number((calOnly.out.match(/== SLA 95% of always-max: ([\d.]+)/) ?? [])[1]);
+    run("fill.ts", ["--phase", "test", "--plans", chosen, "--yes-live"]);
+    const resDir = join(dir, "results");
+    mkdirSync(resDir);
+    const runRes = (extra: Record<string, string>) => {
+      const r = spawnSync("npx", ["tsx", "bench/real-rag/analyze.ts"], { encoding: "utf8", env: { ...env, PATHWISE_BENCH_RESULTS_DIR: resDir, ...extra } });
+      return `${r.stdout}${r.stderr}`;
+    };
+    const none = runRes({});
+    check("replay cannot run and no result file matches: says so, no invented numbers", /not measured: the replay needs a response that is not cached/.test(none) && /no recorded real run with SLA/.test(none) && !/recorded real run, not replayed/.test(none), none.slice(-900));
+    const row = (name: string, quality: number, cost: number) => ({ name, quality, slaMet: quality >= sla, costUsd: cost * 200, costPerQueryUsd: cost, calibrationRuns: 400, report: { slaCertified: false } });
+    const file = (calibration: number, test: number, name: string) =>
+      writeFileSync(join(resDir, name), JSON.stringify({ sla, confidence: 0.9, calibration, test, results: [row("Pathwise (average-based)", 0.7, 0.123), row("Pathwise (guaranteed, confidence 0.9)", 0.8, 0.456)] }));
+    file(50, 200, "run-2099-01-01T00-00-00-000Z.json"); // newest by name but a different calibration size: must be ignored
+    file(100, 200, "run-2026-01-01T00-00-00-000Z.json");
+    writeFileSync(join(resDir, "run-2030-01-01T00-00-00-000Z.json"), "{ not json"); // unreadable: skipped
+    const rec = runRes({});
+    check("recorded rows are shown, labelled 'recorded real run, not replayed, no paired interval'", /Pathwise \(average-based\): recorded real run, not replayed, no paired interval \(run-2026-01-01T00-00-00-000Z\.json\): test F1 0\.700, \$0\.12300\/query/.test(rec), rec.slice(-1500));
+    check("...the newest file with the same SLA and sizes is used (a different calibration size and an unreadable file are skipped)", !/run-2099|run-2030/.test(rec));
+    check("...it says why there is no interval and compares point estimates with the fixed plan", /needs per-question data/.test(rec) && /point estimates, recorded Pathwise \(average-based\) vs fixed plan/.test(rec) && /No interval, so no winner is declared/.test(rec), rec.slice(-1500));
+    const perQ = (f1: number, cost: number) => ({ f1: Array.from({ length: 200 }, (_, i) => f1 + (i % 3) * 0.01), costUsd: Array.from({ length: 200 }, () => cost) });
+    writeFileSync(join(resDir, "run-2026-06-01T00-00-00-000Z.json"), JSON.stringify({ sla, confidence: 0.9, calibration: 100, test: 200, results: [{ ...row("Pathwise (average-based)", 0.7, 0.123), perQuestion: perQ(0.7, 0.123) }] }));
+    const paired = runRes({});
+    check("a result file with per-question data gives a paired verdict for the recorded row", /recorded real run, not replayed \(run-2026-06-01/.test(paired) && /This file stores per-question results/.test(paired) && /Pathwise \(average-based\) \(recorded\) vs the best fixed plan/.test(paired), paired.slice(-1800));
+    rmSync(join(resDir, "run-2026-06-01T00-00-00-000Z.json"));
+    check("...and prints no verdict line for a recorded row", !/FIXED PLAN WINS|ROUTING WINS|NO WINNER/.test((rec.split("recorded real run")[1] ?? "").split("\n")[0] ?? ""));
     const planIds = [...calOnly.out.matchAll(/^(model=\S+)\s+\d\.\d{3}\s+\$/gm)].map((m) => m[1]);
     for (let i = 0; i < planIds.length; i += 4) run("fill.ts", ["--phase", "test", "--plans", planIds.slice(i, i + 4).join(","), "--yes-live"]);
     const full = run("analyze.ts", []);

@@ -73,6 +73,8 @@ interface StrategyResult {
   calibrationRuns?: number;
   planMix?: Record<string, number>;
   report?: unknown;
+  /** Per test question, in test order (added Nov 2026; older result files do not have it). Enables paired intervals offline. */
+  perQuestion?: { f1: number[]; costUsd: number[] };
 }
 
 const results: StrategyResult[] = [];
@@ -109,6 +111,7 @@ async function runPlanner(name: string, confidence: number | undefined): Promise
     calibrationRuns: stats.calibrationRuns,
     planMix: stats.planUsage,
     report,
+    perQuestion: { f1: rows.map((r) => r.f1), costUsd: rows.map((r) => r.cost) },
   };
 }
 
@@ -128,6 +131,7 @@ async function runFixed(name: string, plan: Plan): Promise<StrategyResult> {
     costPerQueryUsd: cost / test.length,
     latencyP50Ms: percentile(rows.map((r) => r.latency), 50),
     latencyP95Ms: percentile(rows.map((r) => r.latency), 95),
+    perQuestion: { f1: rows.map((r) => r.f1), costUsd: rows.map((r) => r.cost) },
   };
 }
 
