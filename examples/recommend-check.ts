@@ -110,6 +110,23 @@ check(calls < full, "racing uses fewer runs than the full table");
   try { await p.recommend(makeQueries(5)); } catch (e) { msg = (e as Error).message; }
   check(msg === "boom", "a pipeline error is thrown, not swallowed");
 }
+// 7. Bad inputs fail loudly: NaN scores and empty samples never produce a plan.
+{
+  const { makeQueries } = createWorkload(8, {});
+  const nan = createPlanner<Q, { correct: boolean }>({ space: SPACE, pipeline: ragPipeline, scorer: () => NaN, sla: { minQuality: 0.5 } });
+  let m1 = "";
+  try { await nan.recommend(makeQueries(12)); } catch (e) { m1 = (e as Error).message; }
+  check(/non-finite/.test(m1), "a NaN scorer is an error, not a plan with NaN quality");
+  let m2 = "";
+  try { await mk({ minQuality: 0.5 }).recommend([]); } catch (e) { m2 = (e as Error).message; }
+  check(/at least one sample/.test(m2), "empty samples are an error");
+}
+// 8. One survivor keeps being measured until certified: a certain plan certifies before the samples run out.
+{
+  const one = createPlanner<Q, { correct: boolean }>({ space: { model: ["only"] }, pipeline: async () => ({ output: { correct: true }, costUsd: 1 }), scorer: () => 1, sla: { minQuality: 0.7 } });
+  const rec = await one.recommend(createWorkload(9, {}).makeQueries(60), { confidence: 0.9 });
+  check(!!rec && rec.certified && rec.samplesUsed < 60, "a single always-right plan certifies with fewer samples than available");
+}
 void rng; void (undefined as unknown as Plan);
 console.log(failures === 0 ? "\nall checks passed (SYNTHETIC)" : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

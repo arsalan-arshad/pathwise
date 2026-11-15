@@ -41,6 +41,7 @@ export interface RecommendArgs<I> {
 
 export async function recommendPlan<I>(a: RecommendArgs<I>): Promise<Recommendation | undefined> {
   const { plans, samples, minQuality, confidence } = a;
+  if (samples.length === 0) throw new Error("recommend() needs at least one sample");
   if (!(confidence > 0 && confidence < 1)) throw new Error("confidence must be in (0, 1)");
   const minSamples = Math.max(1, a.options.minSamples ?? 10);
   const z = normalQuantile(confidence);
@@ -84,7 +85,11 @@ export async function recommendPlan<I>(a: RecommendArgs<I>): Promise<Recommendat
       break;
     }
     alive = kept.map((x) => x.p);
-    if (alive.length === 1) break;
+    if (alive.length === 1) {
+      // One plan is left: keep measuring only it, until it is certified or the samples run out (more evidence can still certify it).
+      const x = b.find((y) => y.p === alive[0])!;
+      if (wilsonLower(sumQ[alive[0]] / n, n, z) >= minQuality || x.hi < minQuality) break;
+    }
   }
   const warnings: string[] = [];
   if (n === 0) return undefined;
@@ -101,6 +106,8 @@ export async function recommendPlan<I>(a: RecommendArgs<I>): Promise<Recommendat
   if (!certified) warnings.push(`not certified: the Wilson lower bound ${lower.toFixed(3)} at confidence ${confidence} is below minQuality ${minQuality} with ${n} samples; this plan only meets the SLA on the observed mean.`);
   if (n < 30) warnings.push(`only ${n} samples: the recommendation is a rough estimate.`);
   warnings.push("elimination looks at the bounds after every sample, so the confidence applies to the final bound, not to the whole search.");
+  const certifiedOthers = alive.filter((p) => p !== best && wilsonLower(sumQ[p] / n, n, z) >= minQuality);
+  if (!certified && certifiedOthers.length > 0) warnings.push(`a dearer surviving plan (${certifiedOthers.map((p) => keys[p]).join(", ")}) is certified; the recommended plan is the cheapest whose observed mean meets the SLA.`);
   const survivors = alive.length;
   return {
     plan: plans[best],

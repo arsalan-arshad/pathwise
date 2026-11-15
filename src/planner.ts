@@ -305,7 +305,11 @@ export class Planner<I, O> {
       concurrency: this.opts.concurrency,
       evaluate: async (input, plan) => {
         const r = await this.opts.pipeline(input, plan);
-        const quality = clamp01(await this.opts.scorer(input, r.output));
+        const raw = await this.opts.scorer(input, r.output);
+        if (!Number.isFinite(raw) || !Number.isFinite(r.costUsd)) {
+          throw new Error("recommend(): the scorer or the pipeline returned a non-finite value (NaN or Infinity), so no recommendation can be made");
+        }
+        const quality = clamp01(raw);
         this.stats.scorerCalls++;
         this.stats.calibrationRuns++;
         this.stats.calibrationCostUsd += r.costUsd;

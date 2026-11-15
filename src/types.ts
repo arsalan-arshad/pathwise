@@ -152,7 +152,7 @@ export interface Recommendation {
   costPerRunUsd: number;
   /** (sample, plan) runs made. */
   callsUsed: number;
-  /** Runs a full table over the same number of samples would have needed. */
+  /** Runs a full table would have needed over the samples actually drawn (plans x samplesUsed, not plans x all samples). */
   fullTableCalls: number;
   samplesUsed: number;
   /** "full-table": no plan was eliminated before the end; "racing": some plans were dropped early. */
