@@ -103,6 +103,15 @@ npm run bench:rag:embed-compare -- --model nomic-embed-text      # --base-url ht
 - `--fake` runs with fake embedders (a difficulty-encoding oracle and pure noise) on the mock cache, every number labelled SYNTHETIC. `npm run bench:rag:embed-compare:check` covers it plus a fake local embeddings server.
 - One dataset, 100 held-out questions, one seed: small differences are noise. The SLA is derived from the same 100 questions (identically for every featurizer). A featurizer that certifies in fewer than 5 of 5 folds gets a warning: uncertified folds serve one safe plan, so that row says little about the features. A real run refuses `PATHWISE_BENCH_MOCK=1`.
 
+## Runs (real data, free tier, list prices)
+
+Run by Arsalan on his own Mac; the response cache is not in the repo. Outputs: `results/analyze-2026-11-15.md` (plan table and fixed plan vs routing, reproduced offline from the cache) and `results/embed-compare-2026-11-15.md` (RUN B, verbatim).
+
+- **RUN A, calibration fill:** 501 calls (small 235, medium 266), Nov 14 22:48 to 23:40 UTC (52 min), $0.65 at list price, billed $0 (free tier). The calibration table is then complete: 12 plans x 100 questions.
+- **RUN A, test fill:** 67 calls for `model=small|thinking=low|topK=10` on the 200 test questions (small model only), about 7 min, free tier.
+- **RUN B:** local Ollama `nomic-embed-text`, calibration-only 5-fold cross-validation on the 100 calibration questions; 3 embed calls, 300 texts, 6426 tokens reported by the server, 768 dimensions, 1.8 s for 300 texts, $0. The test table is incomplete, so no test numbers.
+- One dataset (HotpotQA dev, distractor), one provider (Gemini free-tier models), one seed (7), one sample per (question, plan) pair.
+
 ## Known limits
 
 - HotpotQA is public and old: models may have seen it in training, which flatters small models.
