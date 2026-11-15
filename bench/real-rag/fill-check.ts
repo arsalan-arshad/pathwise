@@ -31,7 +31,7 @@ try {
   expect(run("test phase without --plans is refused", ["--phase", "test"]), 2, /--phase test needs --plans/);
   expect(run("more than 4 plans is refused", ["--phase", "test", "--plans", "a,b,c,d,e"]), 2, /at most 4 plans/);
   expect(run("unknown plan id is refused", ["--phase", "test", "--plans", "model=huge|thinking=low|topK=2"]), 2, /unknown plan id/);
-  expect(run("--plans with calibration is refused", ["--phase", "calibration", "--plans", t]), 2, /test phase only|--phase test only/);
+  expect(run("--plans with calibration is refused", ["--phase", "calibration", "--plans", t]), 2, /test phase only|--phase test only|--phase test\|sample only/);
   expect(run("--yes-live with offline is refused", ["--phase", "calibration", "--yes-live"], { PATHWISE_BENCH_OFFLINE: "1" }), 2, /cannot be combined with PATHWISE_BENCH_OFFLINE/);
   expect(run("paid model set is refused", ["--phase", "calibration"], { PATHWISE_BENCH_MODELS: "paid" }), 2, /only the free model set/);
   expect(run("a model outside the free set is refused", ["--phase", "calibration"], { PATHWISE_BENCH_SMALL_MODEL: "gemini-3.8-flash" }), 2, /not in the free set/);
