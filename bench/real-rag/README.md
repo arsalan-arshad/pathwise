@@ -87,6 +87,16 @@ caffeinate -i npm run bench:rag:fill -- --phase test --plans "model=medium|think
 - The verdict says "routing wins" or "the fixed plan wins" only when both sides have the same SLA outcome on test and the cost interval excludes 0; otherwise "no winner" or "not comparable". One dataset, one provider, one seed.
 - `npm run bench:rag:analyze:check`: SYNTHETIC fixture and mock answers (the choice does not change when test values change; the bootstrap is deterministic; every path prints what it should).
 
+## Finding the best single plan cheaply (offline experiment)
+
+`npm run bench:rag:single-plan` ($0, cache only, never reads the test set) asks: how many calls does it take to find the cheapest plan whose mean F1 meets an SLA, compared with the full table (12 plans x 100 questions = 1,200 calls)? It simulates 300 random question orders (seeded) of (a) the full table, (b) racing (successive elimination: after 10 questions a plan is dropped when its Wilson upper bound is below the SLA, or a cheaper plan's lower bound already meets it), and (c) Pathwise's adaptive calibration, reading the single plan it reports. Not a novelty claim: configuration search for LLM/RAG pipelines is published work. REAL data, one dataset, 100 questions, one seed, in-sample; the shuffles measure variability over question order, not generalization.
+
+Result on the Nov 15 cache (SLA 0.725 and 0.687, both choose `model=small|thinking=low|topK=10`):
+
+- Racing used 756 of 1,200 calls at 0.725 (5th to 95th percentile 502 to 945; 37% fewer) and 722 at 0.687 (40% fewer). It returned the full-table plan in 293/300 and 292/300 orders. It found no feasible plan in 2 and 3 orders, and returned a plan below the SLA once (at 0.687). It almost never stopped before the last question (mean 99 to 100 of 100 used): the savings come from dropping the bad plans early, not from needing fewer questions, because the best plan (0.738) is only 1.3 points above 0.725.
+- Pathwise's adaptive calibration used about 454 runs (444 to 462). Average-based mode reports no single plan (policy "routing"). Guaranteed mode certified in 2 of 30 orders; otherwise its "safe" plan was always-max (`medium|high|topK10`, calibration F1 0.764) in 26 of 30, not the full-table choice.
+- `npm run bench:rag:single-plan:check`: SYNTHETIC generated scores; the true best plan was returned in 298 of 300 independent synthetic tables (the bounds are looked at after every question, so the 1.96 is not a family-wise guarantee).
+
 ## Real embeddings vs hashed features (RUN B)
 
 `npm run bench:rag:embed-compare -- --model nomic-embed-text` compares routing on hashed text features with routing on real embeddings from a local Ollama model ($0, no key). It uses only cached model answers (never a Gemini call) and needs the complete calibration table from the fill above; otherwise it prints the missing count and stops.
