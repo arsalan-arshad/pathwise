@@ -293,6 +293,9 @@ export class Planner<I, O> {
    * measured plan meets the SLA (never an invented plan). `certified` is true only when the Wilson lower bound of the
    * chosen plan's mean quality at `confidence` (default sla.confidence, else 0.9) meets sla.minQuality: with a few
    * dozen samples that is rare when the plan is only a little above the SLA.
+   *
+   * Accounting: its runs, scorer calls and dollars are added to the same stats counters as calibrate()
+   * (`calibrationRuns`, `calibrationCostUsd`, `scorerCalls`), so spend reports include them.
    */
   async recommend(samples: I[], options: RecommendOptions = {}): Promise<Recommendation | undefined> {
     const confidence = options.confidence ?? this.opts.sla.confidence ?? 0.9;
