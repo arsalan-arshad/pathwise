@@ -132,7 +132,8 @@ Run by Arsalan on his own Mac; the response cache is not in the repo. Outputs: `
 - **RUN A, calibration fill:** 501 calls (small 235, medium 266), Nov 14 22:48 to 23:40 UTC (52 min), $0.65 at list price, billed $0 (free tier). The calibration table is then complete: 12 plans x 100 questions.
 - **RUN A, test fill:** 67 calls for `model=small|thinking=low|topK=10` on the 200 test questions (small model only), about 7 min, free tier.
 - **RUN B:** local Ollama `nomic-embed-text`, calibration-only 5-fold cross-validation on the 100 calibration questions; 3 embed calls, 300 texts, 6426 tokens reported by the server, 768 dimensions, 1.8 s for 300 texts, $0. The test table is incomplete, so no test numbers.
-- One dataset (HotpotQA dev, distractor), one provider (Gemini free-tier models), one seed (7), one sample per (question, plan) pair.
+- **MuSiQue Stage 1 (Nov 16):** cheap (`small|low|topK2`) and max (`medium|high|topK10`) plans on 300 sampled MuSiQue dev questions: 600 calls (small 300, medium 300), about $1.37 at list price, billed $0 (free tier). Probe AUC 0.546 (hashed kNN), 0.549 (question type), below the 0.65 gate; the cheap plan averages F1 0.210 vs 0.510 for max, strictly better on 7 of 300 questions. Output: `results/probe-musique-2026-11-16.md`.
+- One dataset per run (HotpotQA dev distractor; MuSiQue dev answerable for Stage 1), one provider (Gemini free-tier models), one seed (7), one sample per (question, plan) pair.
 
 ## Known limits
 
