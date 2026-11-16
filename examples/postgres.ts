@@ -112,6 +112,13 @@ await a.calibrate(samples);
   let m2 = "";
   try { await store.init(); } catch (e) { m2 = (e as Error).message; }
   check(!/hunter2secret|alice:|pw99|bob:/.test(m2), "a scheme-less user:password@host and a quoted URL are removed too");
+  f.fail(new Error("x".repeat(200_000)));
+  const t0 = performance.now();
+  let m3 = "";
+  try { await store.init(); } catch (e) { m3 = (e as Error).message; }
+  const ms = performance.now() - t0;
+  console.log(`     (200,000-character error message without ':' scrubbed in ${ms.toFixed(1)} ms, this machine)`);
+  check(ms < 100 && m3.length < 400, "a 200,000-character error message is scrubbed in under 100 ms and truncated");
   f.fail(undefined);
 }
 // corrupt stored state

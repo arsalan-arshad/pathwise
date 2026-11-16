@@ -46,7 +46,7 @@ const TABLE_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MAX_KEY = 512;
 
 function scrub(err: unknown): string {
-  const text = err instanceof Error ? err.message : String(err);
+  const text = (err instanceof Error ? err.message : String(err)).slice(0, 2000); // bound the input BEFORE the regexes (the second is quadratic on long text without ':')
   return text
     .replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted-url]")
     .replace(/[^\s:@/'"]+:[^\s@/'"]+@[^\s/'"]+/g, "[redacted-credentials]") // scheme-less user:password@host
