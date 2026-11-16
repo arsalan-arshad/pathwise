@@ -159,3 +159,23 @@ export interface Recommendation {
   basis: "full-table" | "racing";
   warnings: string[];
 }
+
+/** Result of planner.certify(): one Wilson lower bound on the quality of the policy that is served, measured on fresh questions. */
+export interface Certification {
+  /** Mean quality of the frozen policy over the fresh samples. */
+  meanQuality: number;
+  /** Wilson lower bound of meanQuality at `confidence`. */
+  lowerBound: number;
+  /** lowerBound >= sla.minQuality. */
+  certified: boolean;
+  confidence: number;
+  /** Fresh samples measured. */
+  n: number;
+  /** Dollar cost of the n pipeline runs. */
+  costUsd: number;
+  /** Share of the fresh samples served by each plan (sums to 1). */
+  planShares: Record<string, number>;
+  /** Share of the fresh samples served by the safe or fallback plan (decide() reported `fallback`). */
+  fellBackToSafe: number;
+  warnings: string[];
+}

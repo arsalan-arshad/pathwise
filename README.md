@@ -68,6 +68,18 @@ each verdict, confirms passes with extra votes, and corrects scores for the judg
 
 Limit: the certification picks its threshold and bounds the result on the same calibration questions, so with a small calibration set it can certify too easily. A synthetic check measured this (`npm run bench:rag:certify`, which re-checks certification on fresh questions); treat `slaCertified` as strong evidence only with a few hundred calibration questions or more, and check it on fresh questions before relying on it. It can also fail to certify when the SLA is in fact met, in which case the safe plan runs and you pay for it.
 
+**Certify by measurement (`planner.certify()`).**
+
+```ts
+await planner.calibrate(calibrationQuestions);
+const cert = await planner.certify(freshQuestions);   // run the policy you would serve on questions it has not seen
+// cert.lowerBound, cert.certified, cert.n, cert.costUsd, cert.planShares, cert.fellBackToSafe, cert.warnings
+```
+
+It runs `decide()`, the pipeline and the scorer on the fresh questions and puts ONE Wilson lower bound (default `sla.confidence`, else 0.9; the 0..1 score is treated like a proportion, which is conservative for graded scores) on the mean quality. `certified` means that bound reached `minQuality` at that confidence on those questions. There is no threshold search, no replay and no learning, and `decide()` and `slaCertified` are untouched. It costs `n` runs of the served plan(s) plus `n` scorer calls, counted in the same stats counters as calibration. If the planner is in safe mode it measures the safe plan (`fellBackToSafe` is 1), so "certified" then means that plan. Use the fresh questions once per frozen policy, keep them independent of calibration and drawn like the traffic you will serve; drift is not covered; `scorerErrorRate` is not corrected (a warning says so). `slaCertified` stays a replay estimate (see the limit above); `certify()` is the measured check to trust over it, within these limits.
+
+Measured (SYNTHETIC, known truth, 0/1 scores, SLA 0.9, confidence 0.9, 1000 repetitions per cell, `npm run bench:certify`): with 100 fresh questions a plan exactly at the SLA was falsely certified in about 12% of runs (by design about 10%) and a plan 2 points below in about 3% (up to about 7% with 20 to 50 questions); a plan 5 points above was certified in 77% of runs with 100 fresh questions and 88% with 150 (graded scores certify more often). On real HotpotQA (100 fully-tabled questions, 200 seeded splits, 30 fresh questions each; not a controlled test of one plan) certification was rare: 11 of 200 splits at SLA 0.725, where the best plan was about 1.3 points above the bar on the calibration table. A margin of a couple of points needs several hundred fresh questions and about one point needs on the order of a thousand (computed, not measured). Details and the design note: `bench/real-rag/results/certify-by-measurement-design-2026-11-17.md`.
+
 **Your own fallback.** If calibration cannot certify the SLA, the default "safe" mode runs one plan inferred from the
 calibration data. Declare the plan you trust today instead, and uncertified runs use exactly that plan:
 
