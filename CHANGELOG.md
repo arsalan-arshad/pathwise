@@ -5,22 +5,37 @@ All notable changes to `@arsalandev/pathwise`. Format follows [Keep a Changelog]
 Every number here is labelled **real** (measured on a real pipeline), **synthetic** (a simulated workload), or **not
 measured**. Synthetic numbers show that the mechanism works; they are not a forecast of your savings.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-17
+
+What is new, in one list. Every number is labelled REAL, SYNTHETIC or not measured. The headline claims are limited by what was measured: see "Known limits" at the end of this entry.
+
+### Added
+- **`planner.recommend(samples)`**: races the plans on the SAME questions (successive elimination with Wilson bounds) and returns the cheapest plan whose mean quality meets `sla.minQuality`, or `undefined` (never an invented plan). Racing is published prior art, not a new method. REAL (HotpotQA, 100 questions, 200 shuffles, one seed, in-sample): same plan as the full table in 195/200 orders at SLA 0.725 with about 37% fewer runs (760 of 1,200); it was never certified at SLA 0.725 (2 of 200 at 0.687). SYNTHETIC checks in `npm run bench:recommend`.
+- **`planner.certify(freshSamples)`**: runs the frozen policy on FRESH questions and puts ONE Wilson lower bound on its mean quality (no threshold search, no replay, no learning; `decide()` and `slaCertified` untouched). SYNTHETIC with known truth (0/1 scores, SLA 0.9, confidence 0.9): a plan exactly at the SLA is falsely certified in about 12% of runs at 100 fresh questions (by design about 10%), a plan 2 points below in about 3%, and a plan 5 points above is certified in 77% of runs with 100 fresh questions and 88% with 150. REAL HotpotQA (`recommend()` on 40 questions, certify on 30 fresh, 200 splits, SLA 0.725): a plan was returned in 185/200 and certified in 11/200; in 10 of those 11 the mean on a third 30-question set was below the SLA (30-question means are noisy, so this is not a miss rate). At 30 fresh questions certification is rare, as the arithmetic predicts.
+- **`pathwise` command line** (after publishing 0.2.0: `npx @arsalandev/pathwise recommend|certify --log file.jsonl`; from a source checkout `node dist/cli.js ...`): the same statistics over a JSONL log of measured runs; zero dependencies, no key, no network. SYNTHETIC checks only.
+- **`@arsalandev/pathwise/postgres`**: store `exportState()` in your own Postgres through a pg-compatible client (no `pg` dependency). Tested against an in-memory fake (SYNTHETIC) and once by the author against a local Postgres (Postgres.app, 3 records); not tested against a hosted database.
+- **Bench tools** (`bench/real-rag`, not in the package): `bench:rag:analyze`, `bench:rag:fill`, `bench:rag:embed-compare`, `bench:rag:probe`, `bench:rag:certify`, `bench:rag:certify:sweep`, `bench:rag:single-plan`, `smoke:ollama`, `smoke:postgres`, and the committed result files under `bench/real-rag/results`.
+
+### Known limits (read before relying on a number)
+- `slaCertified` (the replay claim from `sla.confidence`) is optimistic with a calibration set of 100 or fewer 0/1 scores (SYNTHETIC, known truth: 17% to 40% false certification against 10% nominal) and, when its internal monotonicity flag is false, counts unmeasured plans as zero, so it gets RARER as the calibration set grows (SYNTHETIC: best plan truly 5 points above the SLA, 0/1 scores: certified in 51% / 32% / 13% / 5% of runs at n = 40 / 100 / 300 / 1000 while a fresh-question bound certified 19% / 59% / 88% / 97%). Treat it as a replay estimate; use `certify()` on fresh questions for the measured check. Nothing in `decide()` or the bound changed in this release.
+- `certify()` covers traffic like the fresh sample, not drift; use the fresh questions once per frozen policy; `scorerErrorRate` is not corrected in `recommend()` or `certify()` (a warning says so); under about 60 fresh questions a thin margin cannot certify, and a margin of a couple of points needs several hundred.
+- REAL results are one dataset family at a time (HotpotQA dev, MuSiQue dev), two Gemini free-tier models at list prices, one seed. Routing did not beat one well-chosen fixed plan on HotpotQA; the MuSiQue probe (cheapest vs dearest plan, 300 questions) found no clear signal (AUC 0.546 / 0.549 against a 0.65 internal gate, not a standard) and that pair cannot show headroom. Nothing here shows routing is useless on other workloads.
+- The 0.1.0 entry below is history and is unchanged.
 
 ### Measured on real data (Nov 15, 2026)
-Same setup as above (HotpotQA dev, BM25, two Gemini free-tier models at list prices, 12 plans, 100 calibration and 200 test questions, one seed, one sample per pair), now with the full calibration table.
+Same setup as the 0.1.0 entry below (HotpotQA dev, BM25, two Gemini free-tier models at list prices, 12 plans, 100 calibration and 200 test questions, one seed, one sample per pair), now with the full calibration table.
 - **A single fixed plan beat Pathwise's routing on this data.** Best fixed plan chosen on calibration only (small, top-k 10, thinking low): test F1 0.756 at $0.00055 per query, meets 0.725. Always-max: F1 0.789 at $0.00164. Pathwise average-based: F1 0.707 at $0.00066 (missed). Guaranteed mode fell back to always-max ($0.00164); the fixed plan was cheaper by $0.00110 per query (95% bootstrap interval 0.00097 to 0.00123). For the guaranteed mode the cost interval excludes 0; the average-based comparison is point estimates only (a recorded run, no interval).
 - **Real embeddings did not change the result.** Local `nomic-embed-text` vs hashed text features, calibration-only cross-validation: F1 0.654 vs 0.653 at $0.00051 per query. Test set not measured.
 - Not certifiable at 100 questions: the fixed plan's 90% lower bound is 0.678 against a 0.725 target.
 - One dataset, one provider, one seed. Other datasets and pipelines are not measured. Supersedes the 0.1.0 lines "Not shown: that routing beats the best single fixed plan" and "Not measured: the real-data effect of real embeddings".
 
-### Added
+### Also added
 - Issue forms and `SECURITY.md` (private vulnerability reporting), `permissions: contents: read` for CI.
 - Quick start (`docs/quickstart.md`) with a calibration-size table (computed, not measured).
-- Benchmark tools: `bench:rag:fill` (live, free Gemini models only), `bench:rag:analyze` (best fixed plan vs routing, offline), `bench:rag:embed-compare` (local Ollama embeddings vs hashed features), `smoke:ollama` (written; NOT run against a real server yet).
+- Benchmark tools: `bench:rag:fill` (live, free Gemini models only), `bench:rag:analyze` (best fixed plan vs routing, offline), `bench:rag:embed-compare` (local Ollama embeddings vs hashed features), `smoke:ollama` (written; not confirmed run against a real server).
 
 ### Security
-- `openAIEmbed` and `voyageEmbed` remove the configured API key (6+ characters) from HTTP error text, as `pathwise/openai-compatible` does.
+- `recommend()` and `certify()` reject a negative `costUsd`. `openAIEmbed` and `voyageEmbed` remove the configured API key (6+ characters) from HTTP error text, as `pathwise/openai-compatible` does.
 
 ## [0.1.0] - 2026-11-13
 

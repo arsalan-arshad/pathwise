@@ -55,7 +55,7 @@ Already using the Vercel AI SDK, LangChain.js or any OpenAI-compatible server? T
 
 | Field | Meaning |
 |---|---|
-| `slaCertified` | `true`: a leave-one-out replay of your calibration questions clears `minQuality` at `confidence`. `false`: not enough evidence yet. |
+| `slaCertified` | `true`: a leave-one-out replay of your calibration questions clears `minQuality` at `confidence` (a replay estimate: optimistic when n is small; confirm with `certify()`). `false`: not certified by the replay. |
 | `certifiedQuality` | The lower confidence bound that was reached. Compare it with `minQuality`. |
 | `policy` | `"routing"`: each request gets the cheapest plan predicted to meet the SLA. `"safe-plan"`: not certified, so every request gets one plan. |
 | `fixedPlan` | That one plan: your `fallbackPlan` if you set one, otherwise the plan with the best replayed quality. |
@@ -88,6 +88,7 @@ Read it this way:
 - **A looser target certifies much sooner.** Aim for a target with real margin below your best plan (for example 90% of always-max's score, not 95%).
 - The planner's real check replays its *routing* leave-one-out, not one fixed plan, and judges are noisy and scores often graded, so all of
   that needs more questions than the table. Treat it as "do not expect to certify with fewer than this".
+- That table is for ONE plan measured on fresh questions, which is what `planner.certify(freshQuestions)` does. The replay claim `slaCertified` is optimistic at small n and gets rarer at large n when plans were left unmeasured (README, "SLA guarantee", Limit). A workable path: calibrate, call `planner.recommend()` for a single plan, then `planner.certify()` on at least the n above, drawn from fresh questions.
 
 ## 5. Production settings that matter
 
@@ -98,7 +99,7 @@ Read it this way:
 - **Constraints:** `maxCostUsd` and `maxLatencyMs` in `sla` filter plans when routing. They are **not** enforced while a safe plan or
   `fallbackPlan` is running.
 - **Better matching:** the default text featurizer is hashed words. `@arsalandev/pathwise/embeddings` adds real embeddings; its effect on
-  real data is not measured yet.
+  real data was measured once (HotpotQA, local `nomic-embed-text`) and made no difference; other data is not measured.
 - **Calibrate again** when models, prices or traffic change. The guarantee covers traffic like the calibration sample, not drift.
 
 ## 6. What this is not

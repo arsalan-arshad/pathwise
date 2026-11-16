@@ -5,9 +5,19 @@
 
 [![ci](https://github.com/arsalan-arshad/pathwise/actions/workflows/ci.yml/badge.svg)](https://github.com/arsalan-arshad/pathwise/actions/workflows/ci.yml) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**A query planner for RAG and agent pipelines.** Declare the quality you need; Pathwise picks the cheapest way to deliver it, per request.
+**A query planner for RAG and agent pipelines.** Declare the quality you need; Pathwise finds the cheapest plan that meets it, and can route per request when your traffic needs it.
 
 Databases have had query optimizers for 50 years. AI pipelines don't: teams hard-code one model, one `topK`, one reranker setting for every request, and pay frontier-model prices for "what are your opening hours?".
+
+Words used below: a **plan** is one setting of every knob (model, `topK`, ...); your **SLA** is the minimum quality (and optionally a maximum cost or latency) you require; **calibration** means running plans on a sample of your questions and scoring them; **fresh questions** are ones the plan was never tuned on.
+
+## The idea in three steps: pick, check, (optionally) route
+
+1. **Pick** the cheapest plan that meets your bar: `planner.recommend(samples)` (or `pathwise recommend` on a log of measured runs) races the plans on the same questions and returns one plan, or nothing if none meets the bar.
+2. **Check** it on fresh questions: `planner.certify(freshSamples)` (or `pathwise certify`) measures the policy you would serve on questions it never saw and puts one Wilson lower bound on its quality. A margin of a couple of points needs several hundred fresh questions; it does not cover drift.
+3. **Route** per request only if your traffic needs it: calibration plus `decide()` picks a plan for each request. On our one real dataset family this did not beat a single well-chosen plan (below), so start with steps 1 and 2.
+
+What was measured, honestly: on HotpotQA the best single fixed plan beat routing; real embeddings did not change that; a MuSiQue probe found no clear signal that the question text tells which plan is needed; and the built-in `slaCertified` replay claim was optimistic at small calibration sizes and rarely true at large ones in synthetic checks, which is why `certify()` exists. Details, numbers and limits: [First result on real data](#first-result-on-real-data), [SLA guarantee](#sla-guarantee-confidence-bound), [CHANGELOG](https://github.com/arsalan-arshad/pathwise/blob/main/CHANGELOG.md). Numbers are marked SYNTHETIC or real next to where they appear; real numbers are one dataset family, two free-tier Gemini models at list prices, one seed.
 
 ## Install
 
@@ -30,12 +40,12 @@ npx @arsalandev/pathwise recommend --log runs.jsonl --min-quality 0.8     # chea
 npx @arsalandev/pathwise certify --log fresh.jsonl --plan "model=small|topK=5" --min-quality 0.8   # one Wilson lower bound (0.9 confidence by default, `--confidence`) on a log of FRESH questions
 ```
 
-(The command needs a published version that contains it: it is in the source today, not in 0.1.0.) `--plan` must equal the log's plan string; a plan written as an object `{"topK": 5, "model": "small"}` is keyed alphabetically, `model=small|topK=5`. `recommend` races the plans on the questions in the log (the same code as `planner.recommend()`); its "certified" is measured on the SAME questions it chose from, so it is not a certificate. `certify` is the check: use a log of fresh questions the plan was never tuned on, once per plan, and read its warnings (under 60 questions it usually cannot certify a thin margin; drift is not covered). Add `--json` for machine output; exit code 0 even when nothing is certified, 2 for bad input. Statistics limits: see [SLA guarantee](#sla-guarantee) and [Recommend one plan](#recommend-one-plan-plannerrecommend); the checks are SYNTHETIC only (`npm run bench:cli`).
+(Needs @arsalandev/pathwise 0.2.0 or newer; on 0.1.0 build from source and use `node dist/cli.js`.) `--plan` must equal the log's plan string; a plan written as an object `{"topK": 5, "model": "small"}` is keyed alphabetically, `model=small|topK=5`. `recommend` races the plans on the questions in the log (the same code as `planner.recommend()`); its "certified" is measured on the SAME questions it chose from, so it is not a certificate. `certify` is the check: use a log of fresh questions the plan was never tuned on, once per plan, and read its warnings (under 60 questions it usually cannot certify a thin margin; drift is not covered). Add `--json` for machine output; exit code 0 even when nothing is certified, 2 for bad input. Statistics limits: see [SLA guarantee](#sla-guarantee-confidence-bound) and [Recommend one plan](#recommend-one-plan-plannerrecommend); the checks are SYNTHETIC only (`npm run bench:cli`).
 
 ## How it works
 
 1. **Mark your knobs.** Model, retrieval depth, reranker, agent step budget: anything that trades cost for quality.
-2. **Calibrate.** Pathwise runs plans on a sample of your real queries and scores them: cheapest plans first, stopping at the first plan that wins each query, and pruning plans a cheaper one never loses to. About 9% of the cost of running every plan (`calibration: { strategy: "exhaustive" }` restores that).
+2. **Calibrate.** Pathwise runs plans on a sample of your real queries and scores them: cheapest plans first, stopping at the first plan that wins each query, and pruning plans a cheaper one never loses to. About 9% of the cost of running every plan on the SYNTHETIC demo workload, and about 30% ($0.40 vs $1.34 list price) on our one real HotpotQA table (`calibration: { strategy: "exhaustive" }` restores a full sweep).
 3. **Plan per request.** For each new query it finds similar past queries, predicts each plan's quality, cost and latency, and runs the cheapest plan that meets your SLA.
 4. **Keep learning.** A fraction of production runs are scored and fed back, so it adapts as models and prices change.
 
@@ -56,10 +66,10 @@ await planner.calibrate(sampleQueries);
 const { output, plan } = await planner.run(userQuery);
 ```
 
-## SLA guarantee
+## SLA guarantee (confidence bound)
 
 By default Pathwise picks the cheapest plan whose *average* predicted quality meets `minQuality`.
-Set `confidence` to turn that into a guarantee you can check:
+Set `confidence` to get a replay-based bound (see the limit below; `certify()` is the measured check):
 
 ```ts
 const planner = createPlanner({
@@ -78,7 +88,7 @@ confidence (Wilson lower bound). If no bar does, it runs the best plan for every
 add calibration samples. With a noisy judge, set `scorerErrorRate`: calibration then majority-votes
 each verdict, confirms passes with extra votes, and corrects scores for the judge's error rate.
 
-Limit: the certification picks its threshold and bounds the result on the same calibration questions, so with a small calibration set it can certify too easily. A synthetic check measured this (`npm run bench:rag:certify`, which re-checks certification on fresh questions); treat `slaCertified` as strong evidence only with a few hundred calibration questions or more, and check it on fresh questions before relying on it. It can also fail to certify when the SLA is in fact met, in which case the safe plan runs and you pay for it.
+Limit: `slaCertified` picks its threshold and bounds the result on the same calibration questions. With 100 or fewer 0/1 scores it certifies too easily (SYNTHETIC, known truth: 17% to 40% false certification against 10% nominal). With more questions, when plans were left unmeasured, it certifies less and less often (SYNTHETIC: 51% / 32% / 13% / 5% at n = 40 / 100 / 300 / 1000 with a best plan truly 5 points above the SLA). Treat it as a replay estimate and check the served policy with `planner.certify()` on fresh questions. It can also fail to certify when the SLA is in fact met, in which case the safe plan runs and you pay for it. Numbers and causes: `bench/real-rag/results/certify-sweep-2026-11-16.md` and `certify-diagnose-2026-11-17.md`.
 
 **Certify by measurement (`planner.certify()`).**
 
@@ -115,8 +125,8 @@ Simulated benchmark (`npm run bench:sla`, **synthetic**, 20 random workloads per
 | messy + noisy judge | 300 | 4/20 | **0/20** | $21.41 | $23.08 |
 | clean | 300 | 0/20 | 0/20 | $5.16 | $5.16 |
 
-In these simulated workloads the guarantee costs money when evidence is thin and gets cheaper with more calibration data; a separate synthetic sweep (results/certify-sweep-2026-11-16.md) found certification getting rarer at larger calibration sizes for 0/1 scores, cause not yet diagnosed.
-Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 runs (SYNTHETIC; see the limit above);
+In these simulated workloads the guarantee costs money when evidence is thin and gets cheaper with more calibration data; a separate synthetic sweep found certification getting rarer at larger calibration sizes for 0/1 scores when plans are left unmeasured; numbers and cause in the limit above and `bench/real-rag/results/certify-sweep-2026-11-16.md`.
+Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 production runs (SYNTHETIC; production misses, not the false-certification rate of `slaCertified`; see the limit above);
 the average-based mode missed 45. Real pipelines will differ.
 
 ## Recommend one plan (`planner.recommend()`)
@@ -130,7 +140,7 @@ It returns the cheapest plan whose mean quality meets `sla.minQuality`, or `unde
 
 ## First result on real data
 
-Everything above is simulated. This is one run on a real pipeline (`npm run bench:rag`, details in
+The sections above are mostly simulated; real-data results are labelled REAL. This is one run on a real pipeline (`npm run bench:rag`, details in
 [`bench/real-rag`](bench/real-rag/README.md)): HotpotQA dev (distractor), BM25 retrieval, token-F1 scoring against
 gold answers, two Gemini models (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`) x top-k {2, 5, 10} x thinking {low, high} = 12 plans.
 100 calibration questions, 200 test questions. SLA: at least 95% of always-max's F1 on the calibration questions (0.725).
@@ -143,6 +153,7 @@ Run on the free tier; costs are what the same calls cost at paid list prices.
 | **Pathwise, average-based** | 0.707 | no (1.8 points short) | $0.00066 |
 | **Pathwise, guaranteed (confidence 0.9)** | 0.789 | yes | $0.00164 |
 | Always max (medium, top-k 10, high) | 0.789 | yes | $0.00164 |
+| *Best single fixed plan (small, top-k 10, low), chosen on calibration only (added later, Nov 15; its bound is not certifiable at n=100)* | 0.756 | yes | $0.00055 |
 
 What this shows, and what it does not:
 
@@ -270,7 +281,7 @@ npm install
 npm run demo
 ```
 
-Simulated support-bot workload, 1,000 queries, 90% accuracy SLA:
+Simulated (SYNTHETIC) support-bot workload, 1,000 queries, 90% accuracy SLA:
 
 | Strategy | Accuracy | Cost |
 |---|---|---|
@@ -284,10 +295,11 @@ The workload is synthetic; real savings depend on how varied your traffic is.
 ## Roadmap
 
 - [x] Smarter calibration: cheapest-first search with early stop, dominance pruning, monotonicity audits
-- [x] Real embeddings featurizer (OpenAI / Voyage / local) instead of hashed text features (adapter shipped; on HotpotQA with a local `nomic-embed-text` it made no difference to routing, see "First result on real data")
+- [x] Real embeddings featurizer (OpenAI / Voyage / local) instead of hashed text features (adapter shipped; on HotpotQA with a local `nomic-embed-text` it made no difference to routing, see [First result on real data](#first-result-on-real-data))
 - [x] Adapters for Vercel AI SDK and LangChain.js. LlamaIndex.TS is archived and deprecated (Apr 2026), so it is skipped: the [OpenAI-compatible adapter](#openai-compatible-endpoints-no-sdk) covers the rest
-- [ ] Persistent store (SQLite / Postgres) for learned data
-- [x] Confidence bounds on predicted quality (guarantee the SLA, not just the average)
+- [x] Persistent store: Postgres (`pathwise/postgres`, fake-tested plus one local run); SQLite not done
+- [x] Confidence bounds on predicted quality (a replay estimate) and measured certification on fresh questions (`planner.certify()`); not a drift guarantee
+- [x] `planner.recommend()`, `planner.certify()` and the `pathwise` command line (0.2.0)
 - [ ] Hosted dashboard: dollars saved, SLA met, plan mix over time
 
 ## Author
