@@ -49,8 +49,10 @@ const rows: Array<[string, string, string]> = [];
 const client = new Client({ connectionString: url });
 const planner = () => createPlanner({ space: { model: ["a", "b"] }, pipeline: async () => ({ output: 1, costUsd: 0.001 }), scorer: () => 1, sla: { minQuality: 0.5 } });
 let failed = false;
+let connected = false;
 try {
   await client.connect();
+  connected = true;
   const store = postgresStore({ client, table });
   const t = (label: string, run: () => Promise<unknown>) => async () => {
     const t0 = performance.now();
@@ -76,17 +78,22 @@ try {
   console.log(`FAILED: ${scrub(e)}`);
   failed = true;
 } finally {
-  try {
-    await client.query(`DROP TABLE IF EXISTS "${table}"`);
-    rows.push(["temp table dropped", "ok", table]);
-  } catch (e) {
-    rows.push(["temp table dropped", "FAIL", `${table}: ${scrub(e)} (drop it by hand)`]);
-    failed = true;
-  }
-  try {
-    await client.end();
-  } catch {
-    /* ignore */
+  if (!connected) {
+    rows.push(["connected to the database", "FAIL", "no connection was made, so nothing was created and there is nothing to drop"]);
+    console.log("Hint: ENOTFOUND means the host name in DATABASE_URL does not resolve from this machine. On Railway use the PUBLIC url (DATABASE_PUBLIC_URL); the private one (…railway.internal) only works inside Railway. For a local Postgres: postgresql://localhost:5432/postgres");
+  } else {
+    try {
+      await client.query(`DROP TABLE IF EXISTS "${table}"`);
+      rows.push(["temp table dropped", "ok", table]);
+    } catch (e) {
+      rows.push(["temp table dropped", "FAIL", `${table}: ${scrub(e)} (drop it by hand)`]);
+      failed = true;
+    }
+    try {
+      await client.end();
+    } catch {
+      /* ignore */
+    }
   }
 }
 console.log("\ncheck".padEnd(36) + "result".padEnd(8) + "detail");
