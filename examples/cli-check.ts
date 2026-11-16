@@ -111,7 +111,26 @@ try {
   const args5 = run(["certify", "--log", flog, "--plan", "nope", "--min-quality", "0.5"]);
   const args6 = run(["frobnicate"]);
   const args7 = run(["recommend", "--log", log, "--min-quality", "0.5", "--bogus"]);
-  check([args1, args2, args3, args4, args5, args6, args7].every((x) => x.code === 2) && /--log/.test(args1.err) && /between 0 and 1/.test(args2.err) && /strictly between/.test(args3.err) && /--plan/.test(args4.err) && /no rows for plan/.test(args5.err) && /unknown command/.test(args6.err), "argument errors exit 2 with a clear message", [args1, args2, args3, args4, args5, args6, args7].map((x) => `${x.code} ${x.err}`).join(" | "));
+  check([args1, args2, args3, args4, args5, args6, args7].every((x) => x.code === 2) && /--log/.test(args1.err) && /between 0 and 1/.test(args2.err) && /from 0.5 up to/.test(args3.err) && /--plan/.test(args4.err) && /no rows for plan/.test(args5.err) && /unknown command/.test(args6.err), "argument errors exit 2 with a clear message", [args1, args2, args3, args4, args5, args6, args7].map((x) => `${x.code} ${x.err}`).join(" | "));
+  // review fixes
+  const dirLog = run(["recommend", "--log", dir, "--min-quality", "0.5"]);
+  check(dirLog.code === 2 && /must be a regular file/.test(dirLog.err), "a directory as --log exits 2");
+  const devzero = run(["recommend", "--log", "/dev/zero", "--min-quality", "0.5"]);
+  check(devzero.code === 2 && /must be a regular file/.test(devzero.err), "a character device (/dev/zero) is refused, no crash");
+  const empty = run(["recommend", "--log", log, "--min-quality", ""]);
+  const hex = run(["recommend", "--log", log, "--min-quality", "0x1"]);
+  const rep2 = run(["recommend", "--log", log, "--min-quality", "0.8", "--min-quality", "0.2"]);
+  const lowc = run(["recommend", "--log", log, "--min-quality", "0.5", "--confidence", "1e-300"]);
+  check([empty, hex, rep2, lowc].every((x) => x.code === 2) && /plain decimal number/.test(empty.err) && /plain decimal number/.test(hex.err) && /more than once/.test(rep2.err) && /from 0.5 up to/.test(lowc.err), "empty, hex, repeated and absurd flag values exit 2", [empty, hex, rep2, lowc].map((x) => `${x.code} ${x.err}`).join(" | "));
+  const big = join(dir, "big.jsonl");
+  writeFileSync(big, '{"question":"a","plan":"p","quality":1,"costUsd":1e308}\n{"question":"b","plan":"p","quality":1,"costUsd":1e308}\n');
+  const ov = run(["certify", "--log", big, "--plan", "p", "--min-quality", "0.5"]);
+  check(ov.code === 2 && /add up to more than a double/.test(ov.err), "costUsd values that overflow when summed exit 2");
+  const cons = join(dir, "cons.jsonl");
+  writeFileSync(cons, '{"question":"a","plan":"constructor","quality":1,"costUsd":0}\n{"question":"b","plan":"other","quality":1,"costUsd":0}\n');
+  const cj2 = run(["certify", "--log", cons, "--plan", "constructor", "--min-quality", "0.1", "--json"]);
+  const cjj = JSON.parse(cj2.out || "{}");
+  check(cjj.planShares?.constructor === 1 && cjj.warnings.some((w: string) => /has 2 questions but only 1 have a row/.test(w)), "plan key 'constructor' works and a plan with rows for only some questions warns", cj2.out + cj2.err);
   const help = run(["--help"]);
   check(help.code === 0 && /pathwise recommend/.test(help.out), "--help prints usage and exits 0");
 } finally {

@@ -14,6 +14,12 @@ import type { Plan } from "./types.js";
 export const MAX_LOG_BYTES = 200 * 1024 * 1024;
 export class InputError extends Error {}
 
+/** A plain decimal number only (no hex, no whitespace padding, no empty string): Number() alone would accept "", " " and "0x1". */
+function parseNumber(name: string, text: string): number {
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(text)) throw new InputError(`${name} must be a plain decimal number (got "${text}")`);
+  return Number(text);
+}
+
 export interface Row {
   question: string;
   plan: string;
@@ -40,6 +46,7 @@ export async function readLog(path: string): Promise<Row[]> {
   streamError.catch(() => undefined); // handled below; avoids an unhandled rejection when the loop finishes first
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
   let line = 0;
+  let totalCost = 0;
   const lines = rl[Symbol.asyncIterator]();
   for (;;) {
     const next = await Promise.race([lines.next(), streamError]);
@@ -72,6 +79,8 @@ export async function readLog(path: string): Promise<Row[]> {
     if (typeof quality !== "number" || !Number.isFinite(quality) || quality < 0 || quality > 1) throw new InputError(`line ${line}: "quality" must be a number in [0, 1]`);
     const costUsd = o.costUsd;
     if (typeof costUsd !== "number" || !Number.isFinite(costUsd) || costUsd < 0) throw new InputError(`line ${line}: "costUsd" must be a finite number >= 0`);
+    totalCost += costUsd;
+    if (!Number.isFinite(totalCost)) throw new InputError(`line ${line}: the costUsd values add up to more than a double can hold; check the units`);
     rows.push({ question: String(q), plan, planObject, quality, costUsd, line });
   }
   if (rows.length === 0) throw new InputError("the log has no rows");
@@ -154,7 +163,7 @@ export async function runCertify(rows: Row[], plan: string, minQuality: number, 
   if (!plans.has(plan)) throw new InputError(`no rows for plan "${plan}" in the log (plans in the log: ${[...plans.keys()].slice(0, 8).join(", ")}${plans.size > 8 ? ", ..." : ""})`);
   const questions = [...byQuestion.keys()].filter((q) => byQuestion.get(q)!.has(plan));
   const p: Plan = { plan };
-  return certifyPolicy<string>({
+  const result = await certifyPolicy<string>({
     samples: questions,
     minQuality,
     confidence,
@@ -163,6 +172,10 @@ export async function runCertify(rows: Row[], plan: string, minQuality: number, 
     decide: () => ({ plan: p, planKey: plan, fallback: false }),
     evaluate: async (q) => byQuestion.get(q)!.get(plan)!,
   });
+  if (questions.length < byQuestion.size) {
+    result.warnings.push(`the log has ${byQuestion.size} questions but only ${questions.length} have a row for this plan: certify only sees those ${questions.length}. Make sure the log holds EVERY fresh question you ran this plan on, not only the ones that went well (a log filtered by outcome certifies anything).`);
+  }
+  return result;
 }
 
 const HELP = `pathwise: pick the cheapest plan that meets your bar, and measure it, from a log of measured runs (no key, no network).
@@ -200,12 +213,13 @@ export async function main(argv: string[], out: (s: string) => void, err: (s: st
     }
     if (!values.log) throw new InputError("--log <file> is required");
     if (values["min-quality"] === undefined) throw new InputError("--min-quality <0..1> is required");
-    if (values["min-quality"].trim() === "") throw new InputError("--min-quality must be a number between 0 and 1 (it is empty)");
-    if (values.confidence !== undefined && values.confidence.trim() === "") throw new InputError("--confidence must be a number strictly between 0 and 1 (it is empty)");
-    const minQuality = Number(values["min-quality"]);
+    for (const name of ["log", "plan", "min-quality", "confidence"]) {
+      if (rest.filter((x) => x === `--${name}` || x.startsWith(`--${name}=`)).length > 1) throw new InputError(`--${name} was given more than once`);
+    }
+    const minQuality = parseNumber("--min-quality", values["min-quality"]);
     if (!(minQuality >= 0 && minQuality <= 1)) throw new InputError("--min-quality must be a number between 0 and 1");
-    const confidence = values.confidence === undefined ? 0.9 : Number(values.confidence);
-    if (!(confidence > 0 && confidence < 1)) throw new InputError("--confidence must be a number strictly between 0 and 1");
+    const confidence = values.confidence === undefined ? 0.9 : parseNumber("--confidence", values.confidence);
+    if (!(confidence >= 0.5 && confidence < 1)) throw new InputError("--confidence must be a number from 0.5 up to (not including) 1 (below 0.5 the \"lower\" bound would sit above the mean)");
     const rows = await readLog(values.log);
     if (cmd === "recommend") {
       if (values.plan !== undefined) throw new InputError("--plan is for certify only");
