@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc",
     "demo": "tsx examples/demo.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts examples/prune-bench.ts examples/vercel-ai.ts examples/quickstart.ts examples/openai-compatible.ts examples/embeddings.ts examples/langchain.ts examples/fallback-bench.ts examples/recommend-check.ts examples/postgres.ts bench/real-servers/postgres.ts bench/real-servers/postgres-check.ts bench/real-rag/recommend-eval.ts bench/real-rag/run.ts bench/real-rag/pilot.ts bench/real-rag/replay.ts bench/real-rag/table.ts bench/real-rag/fill.ts bench/real-rag/fill-check.ts bench/real-rag/analyze.ts bench/real-rag/analyze-core.ts bench/real-rag/analyze-check.ts bench/real-rag/probe.ts bench/real-rag/probe-core.ts bench/real-rag/probe-check.ts bench/real-rag/questions.ts bench/real-rag/musique.ts bench/real-rag/single-plan.ts bench/real-rag/single-plan-core.ts bench/real-rag/single-plan-check.ts bench/real-rag/embed-compare.ts bench/real-rag/embed-compare-check.ts bench/real-servers/ollama.ts bench/real-servers/ollama-check.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck examples/demo.ts examples/sla-bench.ts examples/prune-bench.ts examples/vercel-ai.ts examples/quickstart.ts examples/openai-compatible.ts examples/embeddings.ts examples/langchain.ts examples/fallback-bench.ts examples/recommend-check.ts examples/postgres.ts bench/real-servers/postgres.ts bench/real-servers/postgres-check.ts bench/real-rag/recommend-eval.ts bench/real-rag/run.ts bench/real-rag/pilot.ts bench/real-rag/replay.ts bench/real-rag/table.ts bench/real-rag/fill.ts bench/real-rag/fill-check.ts bench/real-rag/analyze.ts bench/real-rag/analyze-core.ts bench/real-rag/analyze-check.ts bench/real-rag/certify.ts bench/real-rag/certify-core.ts bench/real-rag/certify-check.ts bench/real-rag/probe.ts bench/real-rag/probe-core.ts bench/real-rag/probe-check.ts bench/real-rag/questions.ts bench/real-rag/musique.ts bench/real-rag/single-plan.ts bench/real-rag/single-plan-core.ts bench/real-rag/single-plan-check.ts bench/real-rag/embed-compare.ts bench/real-rag/embed-compare-check.ts bench/real-servers/ollama.ts bench/real-servers/ollama-check.ts",
     "bench:sla": "tsx examples/sla-bench.ts",
     "bench:prune": "tsx examples/prune-bench.ts",
     "bench:fallback": "tsx examples/fallback-bench.ts",
@@ -43,6 +43,8 @@
     "bench:rag:fill": "tsx bench/real-rag/fill.ts",
     "bench:rag:analyze": "tsx bench/real-rag/analyze.ts",
     "bench:rag:analyze:check": "tsx bench/real-rag/analyze-check.ts",
+    "bench:rag:certify": "tsx bench/real-rag/certify.ts",
+    "bench:rag:certify:check": "tsx bench/real-rag/certify-check.ts",
     "bench:rag:probe": "tsx bench/real-rag/probe.ts",
     "bench:rag:probe:check": "tsx bench/real-rag/probe-check.ts",
     "bench:rag:recommend": "tsx bench/real-rag/recommend-eval.ts",
