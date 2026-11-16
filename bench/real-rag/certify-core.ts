@@ -54,6 +54,8 @@ export interface SplitResult {
   maxCostC: number;
   maxMeanC: number;
   sla: number;
+  /** What choosing the fixed plan cost: the whole table (every plan) run on A, at list price, per C question. */
+  fixedSelectCostPerC: number;
 }
 
 export async function runSplit(a: SplitArgs): Promise<SplitResult> {
@@ -128,6 +130,7 @@ export async function runSplit(a: SplitArgs): Promise<SplitResult> {
     maxCostC: costOn(maxI, a.C),
     maxMeanC: meanOn(maxI, a.C),
     sla: a.sla,
+    fixedSelectCostPerC: table.cost.reduce((t, row) => t + a.A.reduce((x, q) => x + row[q], 0), 0) / a.C.length,
   };
 }
 
@@ -156,13 +159,17 @@ export interface Aggregate {
   falseCertInSample: number;
   falseCertSplit: number;
   fallbackShare: number;
-  certifiedSaving: number;
-  certifiedOnlyFallback: number;
+  /** Per kind of certification: not a fallback and >1% cheaper than always-max, versus certified only because it served always-max. */
+  savingInSample: number;
+  fallbackInSample: number;
+  savingSplit: number;
+  fallbackSplit: number;
   meanF1C: number;
   costC: number;
   costWithCalibration: number;
   fixedMeanF1: number;
   fixedCost: number;
+  fixedSelectCost: number;
   maxMeanF1: number;
   maxCost: number;
   fixedMissRate: number;
@@ -176,7 +183,7 @@ export function aggregate(rs: SplitResult[]): Aggregate {
   const share = (xs: boolean[]) => xs.filter(Boolean).length / Math.max(1, xs.length);
   const ins = rs.filter((r) => r.inSampleCertified);
   const spl = rs.filter((r) => r.splitCertified);
-  const cert = rs.filter((r) => r.inSampleCertified || r.splitCertified);
+  const saves = (r: SplitResult) => !r.fellBackToMax && r.costC < r.maxCostC * 0.99;
   return {
     n,
     inSampleCertRate: ins.length / n,
@@ -188,13 +195,16 @@ export function aggregate(rs: SplitResult[]): Aggregate {
     falseCertInSample: share(rs.map((r) => r.inSampleCertified && r.missC)),
     falseCertSplit: share(rs.map((r) => r.splitCertified && r.missC)),
     fallbackShare: share(rs.map((r) => r.fellBackToMax)),
-    certifiedSaving: cert.filter((r) => !r.fellBackToMax && r.costC < r.maxCostC * 0.99).length,
-    certifiedOnlyFallback: cert.filter((r) => r.fellBackToMax).length,
+    savingInSample: ins.filter(saves).length,
+    fallbackInSample: ins.filter((r) => r.fellBackToMax).length,
+    savingSplit: spl.filter(saves).length,
+    fallbackSplit: spl.filter((r) => r.fellBackToMax).length,
     meanF1C: meanOf(rs.map((r) => r.meanC)),
     costC: meanOf(rs.map((r) => r.costC)),
     costWithCalibration: meanOf(rs.map((r) => r.costC + r.calibCostPerC)),
     fixedMeanF1: meanOf(rs.map((r) => r.fixed.meanC)),
     fixedCost: meanOf(rs.map((r) => r.fixed.costC)),
+    fixedSelectCost: meanOf(rs.map((r) => r.fixedSelectCostPerC)),
     maxMeanF1: meanOf(rs.map((r) => r.maxMeanC)),
     maxCost: meanOf(rs.map((r) => r.maxCostC)),
     fixedMissRate: share(rs.map((r) => r.fixed.missC)),
