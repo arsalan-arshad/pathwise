@@ -66,6 +66,8 @@ confidence (Wilson lower bound). If no bar does, it runs the best plan for every
 add calibration samples. With a noisy judge, set `scorerErrorRate`: calibration then majority-votes
 each verdict, confirms passes with extra votes, and corrects scores for the judge's error rate.
 
+Limit: the certification picks its threshold and bounds the result on the same calibration questions, so with a small calibration set it can certify too easily. A synthetic check measured this (`npm run bench:rag:certify`, which re-checks certification on fresh questions); treat `slaCertified` as strong evidence only with a few hundred calibration questions or more, and check it on fresh questions before relying on it. It can also fail to certify when the SLA is in fact met, in which case the safe plan runs and you pay for it.
+
 **Your own fallback.** If calibration cannot certify the SLA, the default "safe" mode runs one plan inferred from the
 calibration data. Declare the plan you trust today instead, and uncertified runs use exactly that plan:
 
@@ -89,8 +91,8 @@ Simulated benchmark (`npm run bench:sla`, **synthetic**, 20 random workloads per
 | messy + noisy judge | 300 | 4/20 | **0/20** | $21.41 | $23.08 |
 | clean | 300 | 0/20 | 0/20 | $5.16 | $5.16 |
 
-The guarantee costs money when evidence is thin and gets cheaper with more calibration data.
-Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 runs;
+In these simulated workloads the guarantee costs money when evidence is thin and gets cheaper with more calibration data; a separate synthetic sweep (results/certify-sweep-2026-11-16.md) found certification getting rarer at larger calibration sizes for 0/1 scores, cause not yet diagnosed.
+Across all 16 scenarios we ran (2 workloads x noise on/off x 90/95% SLA x 90/300 samples) the guaranteed mode missed 0 of 320 runs (SYNTHETIC; see the limit above);
 the average-based mode missed 45. Real pipelines will differ.
 
 ## Recommend one plan (`planner.recommend()`)
@@ -235,7 +237,7 @@ await store.init(); await store.save("support-bot", planner);    // upsert plann
 await store.load("support-bot", freshPlanner);                   // imports it into a new planner; undefined if the key is missing
 ```
 
-The key and the state are bound parameters, `postgres://` URLs and `user:password@host` fragments are removed from error text (a bare host name a driver prints on its own is not), and `importState()` appends, so load into a fresh planner. Tested with an in-memory fake client only (`npm run bench:postgres`, SYNTHETIC); the real round trip is `npm run smoke:postgres` (you run it with your own `DATABASE_URL`; not run yet).
+The key and the state are bound parameters, `postgres://` URLs and `user:password@host` fragments are removed from error text (a bare host name a driver prints on its own is not), and `importState()` appends, so load into a fresh planner. Tested with an in-memory fake client only (`npm run bench:postgres`, SYNTHETIC); the real round trip is `npm run smoke:postgres` (you run it with your own `DATABASE_URL`). The author ran `npm run smoke:postgres` once against a local Postgres (Postgres.app): create, save, upsert, load, missing key and drop all passed. It has not been tested against a hosted database (network, SSL, pooling not measured).
 
 ## Demo
 
