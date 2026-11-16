@@ -79,6 +79,8 @@ if (!existsSync(new URL("./data/hotpot_dev_distractor_v1.json", import.meta.url)
     check("probe output is deterministic", p.out === p2.out);
     run("fill.ts", ["--phase", "sample", "--dataset", "musique", "--plans", `${cheap},${max}`, "--n", "30", "--yes-live"]);
     const pm = run("probe.ts", ["--dataset", "musique", "--n", "30"]);
+    const bd = run("probe.ts", ["--dataset", "musique", "--n", "30", "--breakdown"]);
+    check("--breakdown prints means, the tie breakdown, a per-type table and the tie-free label (no AUC on a tiny minority class)", bd.code === 0 && /mean F1 \/ list-price cost per query/.test(bd.out) && /ties \d+ \(both exactly 0: \d+; both equal and above 0: \d+\)/.test(bd.out) && /per type: n \|/.test(bd.out) && /tie-free label/.test(bd.out), bd.out.slice(-900));
     check("musique fixture end to end: probe works, types are hop counts", pm.code === 0 && /dataset musique/.test(pm.out) && /2hop|3hop|4hop/.test(pm.out) && /AUC/.test(pm.out), pm.out.slice(-700));
     check("--embed is refused under mock mode", run("probe.ts", ["--n", "30", "--embed", "ollama"]).code === 2);
   } finally {
