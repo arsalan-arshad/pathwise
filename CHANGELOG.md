@@ -5,7 +5,7 @@ All notable changes to `@arsalandev/pathwise`. Format follows [Keep a Changelog]
 Every number here is labelled **real** (measured on a real pipeline), **synthetic** (a simulated workload), or **not
 measured**. Synthetic numbers show that the mechanism works; they are not a forecast of your savings.
 
-## [0.2.0] - 2026-11-17 (prepared; Arsalan publishes)
+## [0.2.0] - 2026-11-17
 
 What is new, in one list. Every number is labelled REAL, SYNTHETIC or not measured. The headline claims are limited by what was measured: see "Known limits" at the end of this entry.
 
@@ -32,7 +32,7 @@ Same setup as the 0.1.0 entry below (HotpotQA dev, BM25, two Gemini free-tier mo
 ### Also added
 - Issue forms and `SECURITY.md` (private vulnerability reporting), `permissions: contents: read` for CI.
 - Quick start (`docs/quickstart.md`) with a calibration-size table (computed, not measured).
-- Benchmark tools: `bench:rag:fill` (live, free Gemini models only), `bench:rag:analyze` (best fixed plan vs routing, offline), `bench:rag:embed-compare` (local Ollama embeddings vs hashed features), `smoke:ollama` (written; NOT run against a real server yet).
+- Benchmark tools: `bench:rag:fill` (live, free Gemini models only), `bench:rag:analyze` (best fixed plan vs routing, offline), `bench:rag:embed-compare` (local Ollama embeddings vs hashed features), `smoke:ollama` (written; not confirmed run against a real server).
 
 ### Security
 - `recommend()` and `certify()` reject a negative `costUsd`. `openAIEmbed` and `voyageEmbed` remove the configured API key (6+ characters) from HTTP error text, as `pathwise/openai-compatible` does.
