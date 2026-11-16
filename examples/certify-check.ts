@@ -129,6 +129,39 @@ const bern = (r: () => number, m: number) => (r() < m ? 1 : 0);
   await noisy.p.calibrate(Array.from({ length: 20 }, (_, i) => i));
   const w = await noisy.p.certify(Array.from({ length: 70 }, (_, i) => 20 + i));
   check(w.warnings.some((x) => /scorerErrorRate is set but certify\(\) does not correct/.test(x)), "scorerErrorRate > 0 warns that it is not corrected");
+  // review fixes: negative cost, out-of-range scores warn, bad minQuality / non-array, no spend after the first error
+  {
+    const mk = (pipeline: (q: number) => Promise<{ output: number; costUsd: number }>, scorer: (q: number, o: number) => number, minQuality = 0.5) => {
+      const x = createPlanner<number, number>({ space: { model: ["only"] }, pipeline, scorer, sla: { minQuality }, featurize: (q) => [1, q % 5], feedbackRate: 0, concurrency: 4 });
+      x.importState(p.exportState());
+      return x;
+    };
+    const neg = mk(async () => ({ output: 1, costUsd: -5 }), () => 1);
+    let e1 = "";
+    try { await neg.certify([1, 2, 3]); } catch (e) { e1 = (e as Error).message; }
+    check(/negative costUsd/.test(e1), "a negative costUsd throws");
+    const big = mk(async () => ({ output: 1, costUsd: 1 }), () => 1.7);
+    const bw = await big.certify(Array.from({ length: 80 }, (_, i) => i));
+    check(bw.warnings.some((w) => /outside \[0, 1\] and were clamped/.test(w)), "scores outside [0, 1] are clamped with a warning");
+    let e2 = "";
+    try { await mk(async () => ({ output: 1, costUsd: 1 }), () => 1, NaN).certify([1, 2]); } catch (e) { e2 = (e as Error).message; }
+    check(/minQuality must be a number between 0 and 1/.test(e2), "a NaN minQuality throws");
+    let e3 = "";
+    try { await p.certify(undefined as unknown as number[]); } catch (e) { e3 = (e as Error).message; }
+    check(/needs an array/.test(e3), "a non-array throws a clear message");
+    let calls = 0;
+    const flaky = mk(async (q) => { await new Promise((r) => setTimeout(r, 2)); calls++; if (q === 105) throw new Error("late boom"); return { output: 1, costUsd: 1 }; }, () => 1);
+    const runsBefore = flaky.report().calibrationRuns;
+    let e4 = "";
+    try { await flaky.certify(Array.from({ length: 70 }, (_, i) => 100 + i)); } catch (e) { e4 = (e as Error).message; }
+    const at = flaky.report().calibrationRuns;
+    await new Promise((r) => setTimeout(r, 150));
+    check(e4 === "late boom" && flaky.report().calibrationRuns - at <= 3 && calls < 70, `after the first error no further runs START: runs already in flight (at most concurrency - 1 = 3) finish, the other ${70 - (flaky.report().calibrationRuns - runsBefore)} of 70 never run (${at - runsBefore} runs at rejection, ${flaky.report().calibrationRuns - runsBefore} 150 ms later)`);
+    const half = mk(async () => ({ output: 1, costUsd: 3 }), () => { throw new Error("scorer boom"); });
+    const hb = half.report().calibrationCostUsd;
+    try { await half.certify([1]); } catch { /* expected */ }
+    check(half.report().calibrationCostUsd === hb + 3, "pipeline spend is counted even when the scorer then throws");
+  }
   const before = p.report().calibrationRuns;
   await p.certify(Array.from({ length: 10 }, (_, i) => 20 + i));
   check(p.report().calibrationRuns === before + 10, "the stats counters grow by the runs certify() made (documented)");

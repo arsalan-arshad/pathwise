@@ -311,8 +311,8 @@ export class Planner<I, O> {
       evaluate: async (input, plan) => {
         const r = await this.opts.pipeline(input, plan);
         const raw = await this.opts.scorer(input, r.output);
-        if (!Number.isFinite(raw) || !Number.isFinite(r.costUsd)) {
-          throw new Error("recommend(): the scorer or the pipeline returned a non-finite value (NaN or Infinity), so no recommendation can be made");
+        if (!Number.isFinite(raw) || !Number.isFinite(r.costUsd) || r.costUsd < 0) {
+          throw new Error("recommend(): the scorer or the pipeline returned a non-finite value (NaN or Infinity) or a negative costUsd, so no recommendation can be made");
         }
         const quality = clamp01(raw);
         this.stats.scorerCalls++;
@@ -332,7 +332,9 @@ export class Planner<I, O> {
    * puts ONE Wilson lower bound at `confidence` (default sla.confidence, else 0.9) on its mean quality; `certified` is true when
    * the bound reaches sla.minQuality. No threshold search, no replay, no credit for unmeasured plans. It does not learn
    * (no feedback path), does not change decide() or the learned state, and `report.slaCertified` is untouched (that one is a
-   * replay estimate). Needs calibrate() or importState() first (like decide()).
+   * replay estimate). Needs calibrate() or importState() first (like decide()); do not call it while calibrate() is still
+   * running (the policy would still be changing). After the first error no further runs are started (runs already in flight,
+   * at most `concurrency - 1`, still finish and are counted).
    *
    * Use the fresh samples ONCE per frozen policy and keep them independent of calibration: certifying again on the same samples
    * after changing something is a replay, not a certificate. Drift is not covered. `scorerErrorRate` is NOT corrected here
@@ -354,14 +356,17 @@ export class Planner<I, O> {
       },
       evaluate: async (input, plan) => {
         const r = await this.opts.pipeline(input, plan);
+        if (!Number.isFinite(r.costUsd) || r.costUsd < 0) {
+          throw new Error("certify(): the pipeline returned a non-finite or negative costUsd, so no certificate can be made");
+        }
+        this.stats.calibrationRuns++; // counted as soon as the pipeline has run, so spend is visible even if the scorer then throws
+        this.stats.calibrationCostUsd += r.costUsd;
         const raw = await this.opts.scorer(input, r.output);
-        if (!Number.isFinite(raw) || !Number.isFinite(r.costUsd)) {
-          throw new Error("certify(): the scorer or the pipeline returned a non-finite value (NaN or Infinity), so no certificate can be made");
+        if (!Number.isFinite(raw)) {
+          throw new Error("certify(): the scorer returned a non-finite value (NaN or Infinity), so no certificate can be made");
         }
         this.stats.scorerCalls++;
-        this.stats.calibrationRuns++;
-        this.stats.calibrationCostUsd += r.costUsd;
-        return { quality: clamp01(raw), costUsd: r.costUsd };
+        return { quality: clamp01(raw), costUsd: r.costUsd, clamped: raw < 0 || raw > 1 };
       },
     });
   }
