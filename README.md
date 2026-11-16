@@ -68,6 +68,16 @@ each verdict, confirms passes with extra votes, and corrects scores for the judg
 
 Limit: the certification picks its threshold and bounds the result on the same calibration questions, so with a small calibration set it can certify too easily. A synthetic check measured this (`npm run bench:rag:certify`, which re-checks certification on fresh questions); treat `slaCertified` as strong evidence only with a few hundred calibration questions or more, and check it on fresh questions before relying on it. It can also fail to certify when the SLA is in fact met, in which case the safe plan runs and you pay for it.
 
+**Certify by measurement (`planner.certify()`).**
+
+```ts
+await planner.calibrate(calibrationQuestions);
+const cert = await planner.certify(freshQuestions);   // run the policy you would serve on questions it has not seen
+// cert.lowerBound, cert.certified, cert.n, cert.costUsd, cert.planShares, cert.fellBackToSafe, cert.warnings
+```
+
+It runs `decide()`, the pipeline and the scorer on the fresh questions and puts ONE Wilson lower bound (default `sla.confidence`, else 0.9) on the mean quality; no threshold search, no replay, no learning, and `decide()` and `slaCertified` are untouched. Use the fresh questions once per frozen policy and keep them independent of calibration; it covers traffic like the fresh sample, not drift; `scorerErrorRate` is not corrected (a warning says so). Its runs count in the same stats counters as calibration. Measured (SYNTHETIC, known truth, 0/1 scores, SLA 0.9, confidence 0.9; `npm run bench:certify`): a plan exactly at the SLA was falsely certified in about 12% of runs (by design about 10%), a plan 2 points below in about 3%, and a plan 5 points above was certified in 77% of runs with 100 fresh questions and 88% with 150 (graded scores certify more often). On real HotpotQA with 30 fresh questions it almost never certified a plan 1.3 points above the bar; a thin margin needs hundreds of fresh questions. `slaCertified` stays a replay estimate (see the limit above); `certify()` is the certificate. Details and the design note: `bench/real-rag/results/certify-by-measurement-design-2026-11-17.md`.
+
 **Your own fallback.** If calibration cannot certify the SLA, the default "safe" mode runs one plan inferred from the
 calibration data. Declare the plan you trust today instead, and uncertified runs use exactly that plan:
 

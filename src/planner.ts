@@ -1,9 +1,11 @@
 import { cosine, hashedTextFeaturizer } from "./features.js";
+import { certifyPolicy, type CertifyOptions } from "./certify.js";
 import { recommendPlan, type RecommendOptions } from "./recommend.js";
 import { enumeratePlans, planKey } from "./space.js";
 import { normalQuantile, wilsonLower } from "./stats.js";
 import type {
   CalibrationReport,
+  Certification,
   Decision,
   Featurizer,
   KnobSpace,
@@ -323,6 +325,45 @@ export class Planner<I, O> {
       result.warnings.push("scorerErrorRate is set but recommend() does not correct for it: the quality estimates are the raw judge scores.");
     }
     return result;
+  }
+
+  /**
+   * Certification by measurement: runs the policy that is served now (decide(), the pipeline, the scorer) on FRESH samples and
+   * puts ONE Wilson lower bound at `confidence` (default sla.confidence, else 0.9) on its mean quality; `certified` is true when
+   * the bound reaches sla.minQuality. No threshold search, no replay, no credit for unmeasured plans. It does not learn
+   * (no feedback path), does not change decide() or the learned state, and `report.slaCertified` is untouched (that one is a
+   * replay estimate). Needs calibrate() or importState() first (like decide()).
+   *
+   * Use the fresh samples ONCE per frozen policy and keep them independent of calibration: certifying again on the same samples
+   * after changing something is a replay, not a certificate. Drift is not covered. `scorerErrorRate` is NOT corrected here
+   * (a warning says so). With fewer than about 60 samples a plan a few points above the SLA usually cannot certify.
+   *
+   * Accounting: its runs, scorer calls and dollars are added to the same stats counters as calibrate() and recommend()
+   * (`calibrationRuns`, `calibrationCostUsd`, `scorerCalls`), so spend reports include them.
+   */
+  async certify(freshSamples: I[], options: CertifyOptions = {}): Promise<Certification> {
+    return certifyPolicy<I>({
+      samples: freshSamples,
+      minQuality: this.opts.sla.minQuality,
+      confidence: options.confidence ?? this.opts.sla.confidence ?? 0.9,
+      concurrency: this.opts.concurrency,
+      scorerErrorRate: this.opts.scorerErrorRate,
+      decide: (input) => {
+        const d = this.decide(input);
+        return { plan: d.plan, planKey: planKey(d.plan), fallback: d.fallback };
+      },
+      evaluate: async (input, plan) => {
+        const r = await this.opts.pipeline(input, plan);
+        const raw = await this.opts.scorer(input, r.output);
+        if (!Number.isFinite(raw) || !Number.isFinite(r.costUsd)) {
+          throw new Error("certify(): the scorer or the pipeline returned a non-finite value (NaN or Infinity), so no certificate can be made");
+        }
+        this.stats.scorerCalls++;
+        this.stats.calibrationRuns++;
+        this.stats.calibrationCostUsd += r.costUsd;
+        return { quality: clamp01(raw), costUsd: r.costUsd };
+      },
+    });
   }
 
   /**
