@@ -4,7 +4,7 @@ Date: 2026-11-16. Commands: `caffeinate -i npm run bench:rag:fill -- --dataset m
 
 REAL data: MuSiQue dev (answerable) 300 questions sampled with seed 7, Gemini free-tier models at list prices, cheap = `model=small|thinking=low|topK=2`, max = `model=medium|thinking=high|topK=10`; one sample per (question, plan) pair; produced offline from the response cache; the cache is not in the repo.
 
-Fill: 600 new calls (small 300, medium 300), several HTTP 503 retries and one 90 s timeout that all recovered, "remaining 0". List-price cost of the 600 calls about $1.37 (the ledger went from $2.295 to $3.667); billed $0 on the free tier.
+Fill: 600 new calls (small 300, medium 300), several HTTP 503 retries and one 90 s timeout that all recovered, "remaining 0". List-price cost of the 600 calls about $1.37 (the ledger went from $2.295 to $3.667); billed $0 on the free tier. (The mean costs per query in the breakdown below times 300 questions give about $1.41, 3% above the ledger difference; the cause, e.g. how the ledger counts retried calls, was not checked.)
 
 ## Probe output (verbatim, pasted by Arsalan)
 
