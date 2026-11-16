@@ -52,17 +52,17 @@ export async function certifyPolicy<I>(a: CertifyArgs<I>): Promise<Certification
   let cost = 0;
   let fallbacks = 0;
   let clampedCount = 0;
-  const counts: Record<string, number> = {};
+  const counts = new Map<string, number>(); // a Map, so plan keys such as "constructor" or "__proto__" cannot hit inherited properties
   for (let i = 0; i < samples.length; i++) {
     sum += results[i].quality;
     cost += results[i].costUsd;
     if (chosen[i].fallback) fallbacks++;
     if (results[i].clamped) clampedCount++;
-    counts[chosen[i].planKey] = (counts[chosen[i].planKey] ?? 0) + 1;
+    counts.set(chosen[i].planKey, (counts.get(chosen[i].planKey) ?? 0) + 1);
   }
   const n = samples.length;
-  const planShares: Record<string, number> = {};
-  for (const k of Object.keys(counts).sort()) planShares[k] = counts[k] / n;
+  const planShares: Record<string, number> = Object.create(null); // no prototype: every plan key is an own property
+  for (const k of [...counts.keys()].sort()) planShares[k] = (counts.get(k) as number) / n;
   const meanQuality = sum / n;
   const lowerBound = wilsonLower(meanQuality, n, normalQuantile(confidence));
   const certified = lowerBound >= minQuality;

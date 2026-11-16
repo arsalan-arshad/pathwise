@@ -20,6 +20,18 @@ New here? The [quick start](docs/quickstart.md) goes from install to a planner s
 Or from source: `git clone https://github.com/arsalan-arshad/pathwise && cd pathwise && npm install && npm run build`. Adapters are separate entry points
 (`@arsalandev/pathwise/vercel-ai`, `/langchain`, `/embeddings`, `/openai-compatible`); the core has zero runtime dependencies.
 
+## Try it on your own logs
+
+No pipeline wiring, no key, no network: put your measured runs in a JSONL file, one line per (question, plan): `{"question": "q1", "plan": "model=small|topK=5", "quality": 0.8, "costUsd": 0.001}`.
+
+```bash
+# after `npm i @arsalandev/pathwise` (inside that project plain `npx pathwise ...` also works); from a source checkout use `node dist/cli.js ...`
+npx @arsalandev/pathwise recommend --log runs.jsonl --min-quality 0.8     # cheapest plan whose mean quality meets the bar (needs every plan on every question)
+npx @arsalandev/pathwise certify --log fresh.jsonl --plan "model=small|topK=5" --min-quality 0.8   # one Wilson lower bound (0.9 confidence by default, `--confidence`) on a log of FRESH questions
+```
+
+(The command needs a published version that contains it: it is in the source today, not in 0.1.0.) `--plan` must equal the log's plan string; a plan written as an object `{"topK": 5, "model": "small"}` is keyed alphabetically, `model=small|topK=5`. `recommend` races the plans on the questions in the log (the same code as `planner.recommend()`); its "certified" is measured on the SAME questions it chose from, so it is not a certificate. `certify` is the check: use a log of fresh questions the plan was never tuned on, once per plan, and read its warnings (under 60 questions it usually cannot certify a thin margin; drift is not covered). Add `--json` for machine output; exit code 0 even when nothing is certified, 2 for bad input. Statistics limits: see [SLA guarantee](#sla-guarantee) and [Recommend one plan](#recommend-one-plan-plannerrecommend); the checks are SYNTHETIC only (`npm run bench:cli`).
+
 ## How it works
 
 1. **Mark your knobs.** Model, retrieval depth, reranker, agent step budget: anything that trades cost for quality.
