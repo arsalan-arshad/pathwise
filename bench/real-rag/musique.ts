@@ -3,11 +3,13 @@
  * never downloads anything. Download it yourself with the repo's `download_data.sh` (it writes into that repo's `data/`),
  * then copy e.g. `musique_ans_v1.0_dev.jsonl` to bench/real-rag/data/ or point PATHWISE_MUSIQUE_FILE at it.
  *
- * NOT VERIFIED against the real file by the author: the README states the licence and the file names
- * (data/musique_ans_v1.0_dev.jsonl, data/musique_full_v1.0_dev.jsonl) but NOT the JSON field names, the id-prefix meaning
- * or the dev-set size. Assumed official format, one JSON object per line:
- *   id ("2hop__...", "3hop1__...", "4hop3__..."), question, answer, answerable (optional),
- *   paragraphs: [{ idx, title, paragraph_text, is_supporting }].
+ * VERIFIED (Nov 16, 2026) against the real dev file `musique_ans_v1.0_dev.jsonl` (30,439,728 bytes, 2,417 rows, all answerable;
+ * read by desktop and by `npx tsx bench/real-rag/musique-verify.ts`): one JSON object per line with `id`, `question`, `answer`,
+ * `answer_aliases`, `answerable`, `paragraphs: [{ idx, title, paragraph_text, is_supporting }]` (17 to 20 per question) and
+ * `question_decomposition`. The loader reads `id`, `question`, `answer`, `answerable` (optional) and `paragraphs`. Id prefixes
+ * seen: 2hop 1252, 3hop1 568, 3hop2 192, 4hop1 246, 4hop2 64, 4hop3 95. NOT checked: the full-set file (`musique_full_*`,
+ * which has unanswerable rows: the loader drops `answerable: false`, untested on real data) and the train/test files.
+ *
  * `type` = hop count taken from the id prefix ("2hop", "3hop", "4hop"). Anything missing makes the loader throw an error that
  * names the field and the line, so a wrong assumption fails loudly instead of producing garbage. Unanswerable rows are dropped.
  * The scorer uses `answer` only (token F1); `answer_aliases` are ignored.
