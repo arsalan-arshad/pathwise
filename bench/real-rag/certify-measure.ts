@@ -182,7 +182,7 @@ for (const world of ["below", "at", "power"] as World[])
       }
       console.log(`${world.padEnd(6)} ${scores.padEnd(7)} ${String(nCal).padStart(4)}  | ${pct(acc.rc, REPS)} / ${pct(acc.rb, REPS)}  ${(acc.rcalls / REPS).toFixed(0).padStart(5)} | ${pct(acc.dc, REPS)} / ${pct(acc.db, REPS)}  ${(acc.dcalls / REPS).toFixed(0).padStart(5)} | ${pct(acc.p, REPS)} / ${pct(acc.c, REPS)} / ${pct(acc.b, REPS)}  ${(acc.ccalls / REPS).toFixed(0).padStart(5)}`);
     }
-console.log("(calls = pipeline runs: replay claim = adaptive calibration; calibrate+certify = calibration + n_fresh served-policy runs; recommend+certify = racing calls + n_fresh runs of one plan. Standard error about 1.7 points at 10% and 2.8 at 50%.)");
+console.log("(calls = pipeline runs: replay claim = adaptive calibration; calibrate+certify = calibration + n_fresh served-policy runs; recommend+certify = racing calls + n_fresh runs of one plan. Standard error about 1.7 points at 10% and 2.9 at 50%.)");
 
 // ------------------------------------------------------------------ part 4: REAL HotpotQA splits (T-025 protocol, recommend on A)
 if (args.includes("--real")) {
