@@ -27,15 +27,24 @@ export interface Row {
 export async function readLog(path: string): Promise<Row[]> {
   let size: number;
   try {
-    size = statSync(path).size;
+    const st = statSync(path);
+    if (!st.isFile()) throw new Error("not a regular file");
+    size = st.size;
   } catch {
-    throw new InputError(`cannot read the log file "${path}"`);
+    throw new InputError(`cannot read the log file "${path}" (it must be a regular file)`);
   }
   if (size > MAX_LOG_BYTES) throw new InputError(`the log file is ${(size / 1048576).toFixed(0)} MB; the limit is ${MAX_LOG_BYTES / 1048576} MB (this tool reads at most that much)`);
   const rows: Row[] = [];
-  const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
+  const stream = createReadStream(path, { encoding: "utf8" });
+  const streamError = new Promise<never>((_, reject) => stream.on("error", (e) => reject(new InputError(`cannot read the log file "${path}": ${(e as Error).message}`))));
+  streamError.catch(() => undefined); // handled below; avoids an unhandled rejection when the loop finishes first
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
   let line = 0;
-  for await (const raw of rl) {
+  const lines = rl[Symbol.asyncIterator]();
+  for (;;) {
+    const next = await Promise.race([lines.next(), streamError]);
+    if (next.done) break;
+    const raw = next.value;
     line++;
     const text = raw.trim();
     if (!text) continue;
@@ -191,6 +200,8 @@ export async function main(argv: string[], out: (s: string) => void, err: (s: st
     }
     if (!values.log) throw new InputError("--log <file> is required");
     if (values["min-quality"] === undefined) throw new InputError("--min-quality <0..1> is required");
+    if (values["min-quality"].trim() === "") throw new InputError("--min-quality must be a number between 0 and 1 (it is empty)");
+    if (values.confidence !== undefined && values.confidence.trim() === "") throw new InputError("--confidence must be a number strictly between 0 and 1 (it is empty)");
     const minQuality = Number(values["min-quality"]);
     if (!(minQuality >= 0 && minQuality <= 1)) throw new InputError("--min-quality must be a number between 0 and 1");
     const confidence = values.confidence === undefined ? 0.9 : Number(values.confidence);
