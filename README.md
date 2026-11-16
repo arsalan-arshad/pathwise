@@ -9,6 +9,14 @@
 
 Databases have had query optimizers for 50 years. AI pipelines don't: teams hard-code one model, one `topK`, one reranker setting for every request, and pay frontier-model prices for "what are your opening hours?".
 
+## The idea in three steps: pick, prove, (optionally) route
+
+1. **Pick** the cheapest plan that meets your bar: `planner.recommend(samples)` (or `pathwise recommend` on a log of measured runs) races the plans on the same questions and returns one plan, or nothing if none meets the bar.
+2. **Prove** it on fresh questions: `planner.certify(freshSamples)` (or `pathwise certify`) measures the policy you would serve on questions it never saw and puts one Wilson lower bound on its quality. Thin margins need hundreds of fresh questions; it does not cover drift.
+3. **Route** per request only if your traffic needs it: calibration plus `decide()` picks a plan for each request. On our one real dataset family this did not beat a single well-chosen plan (below), so start with steps 1 and 2.
+
+What was measured, honestly: on HotpotQA the best single fixed plan beat routing; real embeddings did not change that; a MuSiQue probe found no clear signal that the question text tells which plan is needed; and the built-in `slaCertified` replay claim was optimistic at small calibration sizes and rarely true at large ones in synthetic checks, which is why `certify()` exists. Details, numbers and limits: [First result on real data](#first-result-on-real-data), [SLA guarantee](#sla-guarantee), `CHANGELOG.md`. Synthetic numbers are labelled synthetic everywhere; real numbers are one dataset family, two free-tier Gemini models at list prices, one seed.
+
 ## Install
 
 ```bash
